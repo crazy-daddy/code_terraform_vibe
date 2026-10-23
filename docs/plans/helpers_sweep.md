@@ -13,7 +13,7 @@
 ## Global Constraints
 - Read-only on `scripts/` and `autoplay/`: no edits, no scratch files there (CLAUDE.md §Boundaries).
 - Harvesters: `caveman:cavecrew-investigator`, default model (Haiku). Judge: `general-purpose` with `model: "fable"`. Reviews: `caveman:cavecrew-reviewer`, default model; the final review no higher than the session's main-loop model.
-- Families already done or planned are out of scope; every harvester brief lists them: everything in the "Done" table of code_quality.md, `_notify`, the `building_ops` deploy/undeploy/upgrade calls ([notify_building_ops.md](notify_building_ops.md)), every `clone_scan_ignore.txt` pair.
+- Families already done or planned are out of scope; every harvester brief lists them: everything in the "Done" table of code_quality.md, `_notify`, the `building_ops` deploy/undeploy/upgrade calls ([notify_building_ops.md](done/notify_building_ops.md)), every `clone_scan_ignore.txt` pair.
 - Harvest output: `docs/plans/helpers_sweep_candidates.md` (tracked, under 64 KB, `tests/test_docs_lint.py`). One `## <family>` section each: sites as `path:line qualname`, the shared rule in one line, how the copies differ, found-by angle.
 - Every claimed site is read in the code by the agent that reports it; no site from scan output alone.
 
