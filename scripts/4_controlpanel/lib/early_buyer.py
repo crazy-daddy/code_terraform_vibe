@@ -39,6 +39,7 @@
 # The headless build-order search (devtools/simulation/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
+import building_ops
 import fleet_commission
 from archive import archive
 from components import component, machine_tier
@@ -346,9 +347,11 @@ class EarlyBuyer:
                 if bought.status != "ok":
                     log.debug(f"[early_buyer] Shop buy {MK2_PACK} -> {bought.status}: {bought.message}")
                     return
-            res = computer.upgrade(MK2_PACK, b_id)
-            if res.status != "ok":
-                log.print(f"[early_buyer] Upgrade {b_id} with {MK2_PACK} -> {res.status}: {res.message}")
+            status, message = building_ops.upgrade(MK2_PACK, b_id, computer)
+            if status in building_ops.CALL_FAILED_STATUSES:
+                return
+            if status != "ok":
+                log.print(f"[early_buyer] Upgrade {b_id} with {MK2_PACK} -> {status}: {message}")
                 return
             log.print(f"[early_buyer] Upgraded {b_id} to Pressure Mk II.")
 

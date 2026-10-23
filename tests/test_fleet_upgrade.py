@@ -2,6 +2,7 @@
 (lib/fleet_upgrade.py): in-place computer.upgrade() with a larger Depot kit."""
 
 import unittest
+from unittest import mock
 
 import drone_upgrade
 import fleet_upgrade
@@ -64,6 +65,20 @@ class DepotUpgradeTests(StubTestCase):
         self.steps(1)
         self.assertEqual(self.depot.type_id, "drone_station_large", self.debug_log())
         self.assertEqual(self.orders().get(fleet_upgrade.REQUESTER) or {}, {})
+
+    def test_upgrade_call_that_raises_waits_and_never_blocks(self):
+        w = self.world
+        w.inventory.add("drone_station_kit_large", 1)
+        self.steps(1)
+        self.assertEqual(self.depot_entries()["drone_station_1"]["state"], "ordered", self.debug_log())
+
+        with mock.patch.object(w.computer, "upgrade", side_effect=RuntimeError("boom")):
+            for _ in range(2):
+                status = self.coordinator.step(w.clock.now)
+                self.assertIn("drone_station_1: upgrade error", status, self.debug_log())
+        self.assertEqual(self.depot_entries()["drone_station_1"]["state"], "ordered", self.debug_log())
+        self.assertEqual(self.depot.type_id, "drone_station")
+        self.assertEqual(w.inventory.count("drone_station_kit_large"), 1)
 
     def test_hand_upgraded_depot_is_dropped(self):
         w = self.world

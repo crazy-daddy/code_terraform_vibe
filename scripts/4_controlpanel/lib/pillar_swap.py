@@ -35,7 +35,7 @@
 
 import cash
 from archive import archive
-from building_ops import classify, deploy_new, undeploy
+from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, undeploy, upgrade
 from components import component, machine_tier, set_powered, start_script
 from storage import inventory_count
 from swallow import swallowed
@@ -419,17 +419,17 @@ class PillarSwap:
         tier = machine_tier(new_id)
         while tier < target:
             pack = pack_id(to_type, tier + 1)
-            res = computer.upgrade(pack, new_id)
-            if res.status == "ok":
+            status, message = upgrade(pack, new_id, computer)
+            if status == "ok":
                 tier += 1
                 self.log.debug(f"Upgraded '{new_id}' to Mk {tier}.")
                 continue
-            if res.status in UPGRADE_WAIT_STATUSES:
-                return f"{new_id}: upgrade {res.status}, waiting"
-            if res.status == "item_not_in_inventory":
+            if status in UPGRADE_WAIT_STATUSES or status in CALL_FAILED_STATUSES:
+                return f"{new_id}: upgrade {status}, waiting"
+            if status == "item_not_in_inventory":
                 _patch_job(phase="buy")
                 return f"{new_id}: {pack} missing, buying"
-            self.log.level("warn").print(f"[pillar_swap] upgrade('{pack}', '{new_id}') refused ({res.status}: {res.message}); stays Mk {tier}.")
+            self.log.level("warn").print(f"[pillar_swap] upgrade('{pack}', '{new_id}') refused ({status}: {message}); stays Mk {tier}.")
             break
         return self._finish(job, tier)
 

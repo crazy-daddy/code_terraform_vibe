@@ -33,7 +33,7 @@
 
 import fleet_status
 from archive import archive
-from building_ops import classify, deploy_new
+from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, upgrade
 from components import component, start_script
 from drone_depots import HOME_DEPOTS_KEY
 from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
@@ -325,17 +325,17 @@ class FleetUpgradeCoordinator:
         if inventory_count(kit) <= 0:
             set_order(REQUESTER, {kit: order_levels(need=1)})
             return f"{old_id}: waiting for {kit}"
-        res = computer.upgrade(kit, old_id)
-        if res.status in DEPOT_UPGRADE_WAIT_STATUSES:
-            return f"{old_id}: upgrade {res.status}"
+        status, message = upgrade(kit, old_id, computer)
+        if status in DEPOT_UPGRADE_WAIT_STATUSES or status in CALL_FAILED_STATUSES:
+            return f"{old_id}: upgrade {status}"
         clear_order(REQUESTER)
-        if res.status == "ok":
+        if status == "ok":
             self._drop("depots", old_id)
             self.log.print(f"[fleet_upgrade] Depot '{old_id}' ({depot['type_id']}) upgraded in place with '{kit}'; old kit back in Inventory.")
             return f"{old_id}: upgraded to {kit}"
-        self._patch("depots", old_id, state="blocked", reason=res.status)
-        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': upgrade('{kit}') refused ({res.status}: {res.message}); blocked.")
-        return f"{old_id}: blocked ({res.status})"
+        self._patch("depots", old_id, state="blocked", reason=status)
+        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': upgrade('{kit}') refused ({status}: {message}); blocked.")
+        return f"{old_id}: blocked ({status})"
 
     # ------------------------------------------------------------ drone swap
 

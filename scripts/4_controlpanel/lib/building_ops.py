@@ -23,7 +23,8 @@ undeploy() is the one computer.undeploy() wrapper with the shared status
 table; the retire flows (plants, biomass, bio chains, Habitats) and the
 pillar and building swaps use it too. deploy_new() is the one deploy step
 with restart adoption, for the jobs, the swaps and the fleet commission and
-upgrade coordinators.
+upgrade coordinators. upgrade() is the one computer.upgrade() wrapper, for
+the jobs, the pack upgraders and the swaps.
 """
 
 from archive import archive
@@ -44,6 +45,9 @@ RETIRE_KEY = "build.retire"
 # Transient: "not right now", retried next step. "no_computer" and "error" are our wrappers'
 # answers (no Ship Computer, the call raised).
 TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready", "no_computer", "error")
+# The wrappers could not ask the game (no Ship Computer, the call raised): the caller waits and
+# retries next pass; it never blocks a job or counts the answer toward a refusal limit.
+CALL_FAILED_STATUSES = ("error", "no_computer")
 # The kit or pack is not in Inventory: back to kit sourcing.
 KIT_STATUSES = ("no_kit", "item_not_in_inventory")
 # The machine is gone already: an undeploy has nothing left to do.
@@ -123,6 +127,23 @@ def deploy_new(kit, outpost_id, fresh=(), computer=None):
     if status != "ok":
         return None, status, getattr(res, "message", "")
     return getattr(res, "machine_id", None), "ok", ""
+
+
+def upgrade(pack, machine_id, computer=None):
+    """
+    computer.upgrade(pack, machine_id) as (status, message): the game's answer, "error" when the
+    call raised, "no_computer" without one (both in CALL_FAILED_STATUSES). The status sorts with
+    classify().
+    """
+    computer = computer or component("computer")
+    if computer is None:
+        return "no_computer", ""
+    try:
+        res = computer.upgrade(pack, machine_id)
+    except Exception as error:
+        swallowed("building_ops.upgrade: computer.upgrade", error)
+        return "error", ""
+    return getattr(res, "status", "") or "?", getattr(res, "message", "") or ""
 
 
 def _kit_missing(job_id, job, item_id):
@@ -370,15 +391,11 @@ class BuildingOps:
             if _kit_missing(job_id, job, item_id):
                 return f"{job_id}: waiting for {item_id}"
             _patch(job_id, state="upgrading", status="")
-        computer = component("computer")
-        if computer is None:
+        status, _message = upgrade(item_id, machine_id)
+        if status == "no_computer":
             return f"{job_id}: no Ship Computer"
-        try:
-            res = computer.upgrade(item_id, machine_id)
-        except Exception as error:
-            swallowed("building_ops._step_upgrade: computer.upgrade", error)
+        if status == "error":
             return f"{job_id}: upgrade error"
-        status = getattr(res, "status", "") or "?"
         verdict = classify(status)
         if verdict == "ok":
             _patch(job_id, state="done", status="ok")
