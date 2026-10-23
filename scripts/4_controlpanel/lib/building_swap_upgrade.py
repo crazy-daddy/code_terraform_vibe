@@ -27,7 +27,7 @@
 
 import cash
 from building_ops import classify, deploy_new, undeploy
-from components import research_unlocked
+from components import outposts, research_unlocked
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
@@ -87,16 +87,8 @@ class BuildingSwapUpgrader:
 
     # ------------------------------------------------------------ lookups
 
-    def _outposts(self):
-        network = self._component("outpost_network")
-        try:
-            return network.outposts() if network else []
-        except Exception as error:
-            swallowed(f"{self.MODULE}._outposts: network.outposts", error)
-            return []
-
     def _outpost(self, outpost_id):
-        return next((o for o in self._outposts() if getattr(o, "id", "") == outpost_id), None)
+        return next((o for o in outposts() if getattr(o, "id", "") == outpost_id), None)
 
     def _ids_of(self, outpost: "OutpostRef", type_id):
         try:

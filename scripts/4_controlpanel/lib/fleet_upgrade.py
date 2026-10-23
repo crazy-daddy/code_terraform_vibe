@@ -31,6 +31,7 @@
 # the save file before the deploy, so scripts_sync can match the new slot to
 # the old drone and fill it without asking.
 
+import components
 import fleet_status
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, undeploy, upgrade
@@ -106,13 +107,7 @@ class FleetUpgradeCoordinator:
     def _depots(self):
         """[{id, name, type_id, outpost_id}] for every Drone Depot of every size."""
         found = []
-        network = component("outpost_network")
-        try:
-            outposts = network.outposts() if network else []
-        except Exception as error:
-            swallowed("fleet_upgrade.FleetUpgradeCoordinator._depots: network.outposts", error)
-            outposts = []
-        for outpost in outposts:
+        for outpost in components.outposts():
             for type_id in DEPOT_TYPE_TIERS:
                 try:
                     refs = outpost.buildings(type_id)

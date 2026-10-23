@@ -58,6 +58,7 @@
 # EVICT_REQUESTER); another destination's site-supply target is raised by
 # them (add_evicted()). Requested until gone.
 
+import components
 import fleet_status
 from archive import STATUS_STALE_TICKS, archive
 from components import component
@@ -489,8 +490,6 @@ def sell_stranded_reagents(curr_tick):
     Shop sells what Inventory holds. Reagents home requests (other than the
     evict request that brought them) stay. Returns the credits earned."""
     global _labless_since
-    from site_supply import _outposts  # cycle: site_supply imports site_evict
-
     if discover_building_ids(BIO_LAB_TYPE_ID):
         _labless_since = None
         return 0
@@ -498,7 +497,7 @@ def sell_stranded_reagents(curr_tick):
         _labless_since = curr_tick
     if curr_tick - _labless_since < EVICT_AFTER_TICKS:
         return 0
-    home = next((o for o in _outposts() if outpost_is_home(o)), None)
+    home = next((o for o in components.outposts() if outpost_is_home(o)), None)
     shop = component("shop")
     if home is None or not shop:
         return 0

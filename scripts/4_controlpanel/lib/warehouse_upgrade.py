@@ -42,6 +42,7 @@
 # one more Warehouse (BuildingSwapUpgrader._rebuy()) and drains into that.
 
 import cash
+import components
 from building_swap_upgrade import BuildingSwapUpgrader
 from game_clock import now_tick
 from game_rules import WAREHOUSE_SLOT_UNITS
@@ -139,7 +140,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         """[((free_slots, -smalls), outpost_id, small_ids, swaps), ...] for every outpost with a
         swap to do: fewest free store slots first, then most plain Warehouses."""
         candidates = []
-        outposts = self._outposts()
+        outposts = components.outposts()
         skip = {getattr(o, "id", "") for o in storage_outposts(outposts)}  # no cap penalty there
         snapshot = StorageSnapshot()
         for outpost in outposts:
@@ -330,7 +331,7 @@ class BinUpgrader(WarehouseUpgrader):
 
     def _candidates(self):
         candidates = []
-        for outpost in self._outposts():
+        for outpost in components.outposts():
             plan = self._bin_plan(outpost)
             if plan:
                 candidates.append((-len(plan), getattr(outpost, "id", ""), plan, 1))

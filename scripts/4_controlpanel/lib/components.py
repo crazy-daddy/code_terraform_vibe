@@ -139,6 +139,19 @@ def home_outpost() -> "OutpostRef | None":
         return None
 
 
+def outposts() -> "list[OutpostRef]":
+    """Every owned OutpostRef (outpost_network.outposts()); [] when the network
+    is missing or the call raises."""
+    network = component("outpost_network")
+    if network is None:
+        return []
+    try:
+        return list(network.outposts())
+    except Exception as error:
+        swallowed("components.outposts: network.outposts", error)
+        return []
+
+
 def home_outpost_id():
     """Id of home_outpost(); None when unreadable."""
     return getattr(home_outpost(), "id", None)

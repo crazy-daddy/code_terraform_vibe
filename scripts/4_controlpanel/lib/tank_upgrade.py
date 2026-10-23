@@ -30,6 +30,7 @@
 import cash
 from archive import archive
 from building_swap_upgrade import BuildingSwapUpgrader
+from components import outposts
 from fluid_routing import BROKEN_CONNECTION_STATES, RETIRING_ASSIGNMENT, TANK_ASSIGNMENTS_KEY, declared_connection_state, get_tank_assignments
 from swallow import call_or
 from tree_console import method_block
@@ -85,7 +86,7 @@ class TankUpgrader(BuildingSwapUpgrader):
         assignments = get_tank_assignments()
         skip = EXOTIC_FLUIDS if wildlife_complete() else ()
         groups = []
-        for outpost in self._outposts():
+        for outpost in outposts():
             outpost_id = getattr(outpost, "id", "")
             by_liquid = {}
             for tank_id in self._ids_of(outpost, SMALL_TYPE_ID):
