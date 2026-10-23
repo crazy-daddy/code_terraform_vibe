@@ -27,9 +27,9 @@ import lib/, so it can only share code with files of its own tier.
 No "cross" mark for autoplay/ <-> scripts/ pairs, but the sharing runs one way:
 scripts_sync.py merge_autoplay() puts autoplay/lib/*.py into the same lib
 index as the script libs, so autoplay modules can import script libs. It only
-runs for a save at tier LIB_UNLOCK_TIER_NUMBER (4, 4_controlpanel) or above and
-with --include-autoplay, so scripts/<tier> files can never import
-autoplay/lib. A helper shared by an autoplay/ and a scripts/ copy must
+runs for a save at tier LIB_UNLOCK_TIER_NUMBER or above and
+with --include-autoplay, so scripts/<tier> files must never import
+autoplay/lib (it breaks deploys without --include-autoplay). A helper shared by an autoplay/ and a scripts/ copy must
 therefore live in a scripts lib, never in autoplay/lib. Files under autoplay/
 (outside the tier tree) show no tier.
 
