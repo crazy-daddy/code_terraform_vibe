@@ -47,7 +47,12 @@ def _tier_lib_dirs(max_tier):
 def _install_builtins(world):
     builtins.get_component = world.get_component  # type: ignore[attr-defined]
     builtins.sleep = lambda _seconds: None  # type: ignore[attr-defined]
-    builtins.notify = lambda text, *_args, **_kwargs: world.notices.append(text)  # type: ignore[attr-defined]
+
+    def notify(text, level="info", duration_seconds=None, dismissible=True):
+        world.notices.append(text)
+        world.notice_args.append((text, level, duration_seconds))
+
+    builtins.notify = notify  # type: ignore[attr-defined]
     builtins.set_status = lambda message, level="info": setattr(world, "status", (message, level))  # type: ignore[attr-defined]
     builtins.clear_status = lambda: setattr(world, "status", None)  # type: ignore[attr-defined]
 

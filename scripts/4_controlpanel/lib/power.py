@@ -191,13 +191,6 @@ def _member_generated(grid: "PowerGrid", type_id):
     return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == type_id)
 
 
-def _notify(text, level="warn", duration=8.0):
-    try:
-        notify(text, level=level, duration_seconds=duration)
-    except Exception as error:
-        swallowed("power._notify: notify", error)
-
-
 def steam_tanks():
     """Resolved steam Gas Tanks network-wide (one network per fluid, one grid):
     fluid_routing's shared network walk filtered by eligible_targets(), so a
@@ -392,7 +385,7 @@ class PowerGridManager:
         if draining:
             msg = f"Grid '{grid_id_str}' is draining: {', '.join(draining)} over day {summary['day']}. Add generation or cut load."
             self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
-            _notify(f"[Power Advisory] {msg}")
+            notify(f"[Power Advisory] {msg}", level="warn", duration_seconds=8.0)
         else:
             self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION * 100:.0f}% of capacity; no advisory.")
         self._solar_retire_advisory(start, grid_id_str)
@@ -409,7 +402,7 @@ class PowerGridManager:
             return
         msg = f"Solar made {solar_wh / gen_wh * 100:.1f}% of '{grid_id_str}' generation on day {day.get('day')} ({self.phase} phase). The solar panels can be retired to free building slots."
         self.log.print(f"[POWER ADVISORY] {msg}")
-        _notify(f"[Power Advisory] {msg}", level="info")
+        notify(f"[Power Advisory] {msg}", level="info", duration_seconds=8.0)
 
     def _track_day(self, grid: "PowerGrid", now, grid_id_str):
         self.log.start("[POWER] _track_day", level="debug")
@@ -555,7 +548,7 @@ class PowerGridManager:
         if shed_count:
             newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac * 100:.0f}%", grid_id_str, keep=keep)
             if newly:
-                _notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac * 100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error")
+                notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac * 100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error", duration_seconds=8.0)
 
         restore_ok = frac >= EMERGENCY_RESTORE_FRACTION
         pending = (self.shedded_machines | self.adopted_machines) if restore_ok else (self.shedded_machines | self.adopted_machines) & keep

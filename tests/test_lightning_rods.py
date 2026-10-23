@@ -153,6 +153,9 @@ class OilRodTests(StubTestCase):
         controller = self.controller()
         self.assertGreater(controller.last_resort_throttle(0.05, 0.05, 500.0, 500.0, 1), 0.0)
         self.assertIn("oil_generator_1", archive.get(power.OIL_RESORT_KEY, {}))
+        self.assertEqual(len(self.world.notice_args), 1)
+        self.assertTrue(self.world.notice_args[0][0].startswith("[Power] Oil Generator"))
+        self.assertEqual(self.world.notice_args[0][1:], ("warn", 8.0))
         controller.last_resort_throttle(0.9, 0.9, 0.0, 0.0, 1)
         self.assertNotIn("oil_generator_1", archive.get(power.OIL_RESORT_KEY, {}))
 

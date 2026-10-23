@@ -107,13 +107,6 @@ NEUTRAL_GRACE_STEPS = 5
 OIL_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 
-def _notify(text, level="warn", duration=8.0):
-    try:
-        notify(text, level=level, duration_seconds=duration)
-    except Exception as error:
-        swallowed("oil_generator._notify: notify", error)
-
-
 OIL_POLL_SECONDS = 4.0  # reserve and deficit change over minutes
 
 
@@ -347,7 +340,7 @@ class OilGeneratorController(MachineController):
             self._publish_resort(True)
             msg = f"Oil Generator '{self.name}' burning oil: battery {battery_str}, combined reserve {reserve_str}, deficit {deficit:.0f} W. Emits CO2."
             self.log.level("warn").print(f"[{self.name}] Last resort ON -- battery {battery_str} / combined {reserve_str}, lowest < {OIL_START_RESERVE_FRACTION * 100:.0f}%, deficit {deficit:.0f} W.")
-            _notify(f"[Power] {msg}")
+            notify(f"[Power] {msg}", level="warn", duration_seconds=8.0)
         else:
             recovered = min(fractions) >= OIL_STOP_RESERVE_FRACTION if fractions else deficit <= 0
             if recovered:

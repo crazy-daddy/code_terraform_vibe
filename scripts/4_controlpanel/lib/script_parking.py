@@ -698,7 +698,7 @@ class ScriptParking:
                 return None
         elif age >= STRAY_NOTIFY_TICKS and entry.get("stage", 1) < 2:
             entry = dict(entry, stage=2)
-            self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
+            notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.", level="warn", duration_seconds=10.0)
         return entry
 
     def _start_lit(self, machine_id, members, parked, woken, shed, requests):
@@ -740,13 +740,6 @@ class ScriptParking:
         except Exception as error:
             swallowed("script_parking._script_state: run_control.status", error)
             return None
-
-    @staticmethod
-    def _notify(text):
-        try:
-            notify(text, level="warn", duration_seconds=10.0)
-        except Exception as error:
-            swallowed("script_parking._notify: notify", error)
 
     # ------------------------------------------------------------------ vehicles
 

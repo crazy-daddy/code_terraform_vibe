@@ -17,7 +17,6 @@
 # Shed state lives in the PowerGridManager that owns this guard, so a phase
 # change hands every shed machine to the other strategy's restore path.
 from archive import archive
-from swallow import swallowed
 
 # Exact day/night schedule from the decompiled simworker (`daylight: {...}`),
 # fractions of a day mapped onto elapsed_game_hours()'s 0-24 scale.
@@ -54,13 +53,6 @@ NIGHT_RESTORE_MARGIN = 1.10
 NIGHT_RESTORE_MARGIN_STEP = 0.15
 NIGHT_RESTORE_MIN_FRACTION = 0.30
 NIGHT_RESTORE_FRACTION_STEP = 0.10
-
-
-def _notify(text, level="warn", duration=8.0):
-    try:
-        notify(text, level=level, duration_seconds=duration)
-    except Exception as error:
-        swallowed("power_solar._notify: notify", error)
 
 
 class SolarNightGuard:
@@ -110,13 +102,13 @@ class SolarNightGuard:
                 hist_tag = f" (Historical night: {hist_wh:.0f} Wh)" if hist_wh else ""
                 msg = f"Battery capacity ({capacity_wh:.0f} Wh) on '{grid_id_str}' insufficient for night loads ({baseline_wh:.0f} Wh needed{hist_tag}). Recommend {bats_needed}x Battery at Shop."
                 self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
-                _notify(f"[Power Advisory - {grid_id_str}] {msg}")
+                notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
 
             if capacity_wh > 0 and self.peak_day_battery_wh < capacity_wh * 0.90:
                 charge_pct = self.peak_day_battery_wh / capacity_wh * 100
                 msg = f"Solar generation deficit on '{grid_id_str}'! Batteries only reached {charge_pct:.0f}% charge. Recommend 1x Solar Generator (500 cr) at Shop."
                 self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
-                _notify(f"[Power Advisory - {grid_id_str}] {msg}")
+                notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
         self.log.end()
 
     def handle_sunrise(self, current_hour, grid_id_str):
@@ -170,7 +162,7 @@ class SolarNightGuard:
             for m_id in newly:
                 self.shed_draw_w[m_id] = (draws or {}).get(m_id, 0.0)
             if newly:
-                _notify(f"[Power Guard] Shed {len(newly)} load(s) on '{grid_id_str}': {reason}", level="error" if severe else "warn")
+                notify(f"[Power Guard] Shed {len(newly)} load(s) on '{grid_id_str}': {reason}", level="error" if severe else "warn", duration_seconds=8.0)
 
         # Partial recovery through the night once the battery clears the need, with the
         # tier's shed draw added back, by a margin; later tiers (the more important
@@ -215,7 +207,7 @@ class SolarNightGuard:
             bats_needed = max(1, int((wh_needed - stored_wh) // 500) + 1)
             msg = f"Night deficit on '{grid_id_str}'! Stored energy ({stored_wh:.0f} Wh) cannot survive remaining night ({wh_needed:.0f} Wh needed, {remaining_night:.1f}h left). Recommend {bats_needed}x Battery at Shop."
             self.log.level("warn").print(f"[BATTERY ADVISORY] {msg}")
-            _notify(f"[Battery Advisory - {grid_id_str}] {msg}", duration=10.0)
+            notify(f"[Battery Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=10.0)
 
     def _restore_tiers(self, tiers, grid_machines, grid_id_str, load_w, fit):
         """Restores shed tiers, the last (most important) first. fit(steps, load_w, back_w)
