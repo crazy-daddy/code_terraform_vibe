@@ -90,6 +90,7 @@
 from typing import TYPE_CHECKING
 
 import autoplay_roles
+import components
 import game_phase
 from archive import archive
 from atomic import run_batched
@@ -640,16 +641,8 @@ def _call(name: str, read: "Callable[[], _T]", default: "_T") -> "_T":
 
 def read_outposts(roles_map):
     """Snapshot outpost entries over outpost_network; [] when unreadable."""
-    network = get_component("outpost_network")
-    if network is None:
-        return []
-    try:
-        refs = list(network.outposts() or [])
-    except Exception as error:
-        swallowed("outpost_needs.read_outposts: outpost_network.outposts", error)
-        return []
     out = []
-    for ref in refs:
+    for ref in components.outposts():
         try:
             types = {}
             for building in ref.buildings() or []:
@@ -662,12 +655,9 @@ def read_outposts(roles_map):
 
 def _machines(type_id):
     """Components of every building of type_id over outpost_network."""
-    network = get_component("outpost_network")
     out = []
-    if network is None:
-        return out
     try:
-        for ref in network.outposts() or []:
+        for ref in components.outposts():
             for building in ref.buildings(type_id) or []:
                 component = get_component(building.id)
                 if component is not None:

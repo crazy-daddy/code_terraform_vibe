@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING
 import autoplay_roles
 import build_providers
 import building_ops
+import components
 import focus_plan
 import game_phase
 import outpost_needs
@@ -383,17 +384,9 @@ def read_grids():
 
 def read_machines(type_ids):
     """({type_id: [(machine_id, outpost_id, tier)]}, {(outpost_id, type_id): [machine_id]}) over outpost_network."""
-    network = component("outpost_network")
     rows = {}
     ids = {}
-    if network is None:
-        return rows, ids
-    try:
-        refs = list(network.outposts() or [])
-    except Exception as error:
-        swallowed("building_plan.read_machines: outpost_network.outposts", error)
-        return rows, ids
-    for ref in refs:
+    for ref in components.outposts():
         for type_id in type_ids:
             try:
                 for building in ref.buildings(type_id) or []:
