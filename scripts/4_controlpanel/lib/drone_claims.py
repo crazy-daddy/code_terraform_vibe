@@ -253,8 +253,7 @@ class DroneClaimsMixin:
 
     def get_biosite_claims(self):
         """Returns the fleet-wide biosite claims dict {target_key: {"drone", "coords", "name", "tick"}}."""
-        claims = archive.get(BIOSITE_CLAIMS_KEY, {})
-        return claims if isinstance(claims, dict) else {}
+        return archive.get_dict(BIOSITE_CLAIMS_KEY)
 
     # --- Scout's confirmed-empty POI cache ---------------------------------
 

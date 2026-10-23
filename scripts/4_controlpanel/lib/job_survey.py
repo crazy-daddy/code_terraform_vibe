@@ -6,10 +6,9 @@
 # (lib/pioneer.py). Sonar abilities (scan_and_survey, survey_known_pois,
 # spiral waypoints, save_survey_waypoint): lib/vehicle_survey.py.
 
-from archive import archive
 from job_base import Job
 from mission import Mission
-from vehicle_survey import SURVEY_SPIRAL_KEY
+from vehicle_survey import spiral_next_index
 
 # Mission kind pick() returns for "scan the known contacts": one
 # survey_known_pois() route, not a single claimed target.
@@ -113,8 +112,7 @@ class SurveyJob(Job):
         """The next unscanned spiral waypoint (survey.spiral next_index) as a Mission; None without spiral_fallback or a sonar."""
         if not self.spiral_fallback:
             return None
-        progress = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
-        start_index = progress.get("next_index", 0)
+        start_index = spiral_next_index()
         for point_index, target_x, target_y in self.host.survey_spiral_points(start_index=start_index, max_points=1):
             key = f"poi_{target_x}_{target_y}"
             return Mission(kind="poi", target_key=key, target={"coords": (target_x, target_y), "name": key, "type": "poi", "index": point_index}, source="spiral")
@@ -176,8 +174,7 @@ class SurveyJob(Job):
                 break
 
         host.return_to_base()
-        spiral_data = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
-        next_index = spiral_data.get("next_index", start_index)
+        next_index = spiral_next_index(start_index)
         host.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
         host.recharge_at_station(target_level=1.0)
         host.log.end(f"[{host.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}")

@@ -19,7 +19,7 @@
 
 import building_ops
 import cash
-from components import component
+from components import component, outposts, research_unlocked
 from drone_upgrade import fleet_upgrade_state
 from game_clock import now_tick
 from site_evict import storage_outposts
@@ -58,22 +58,8 @@ class StorageExpander:
         self.warning = StatusWarning(self.log, MODULE, "Storage outpost full")
         self.settled = {}  # {outpost_id: tick of the last deploy there}
 
-    def _outposts(self):
-        network = component("outpost_network")
-        try:
-            return network.outposts() if network else []
-        except Exception as error:
-            swallowed("storage_expand._outposts: network.outposts", error)
-            return []
-
     def _unlocked(self, type_id, research_id):
-        research = component("research")
-        try:
-            if research and research.is_unlocked(research_id):
-                return True
-        except Exception as error:
-            swallowed("storage_expand._unlocked: research.is_unlocked", error)
-        return inventory_count(type_id) > 0
+        return research_unlocked(research_id, "storage_expand._unlocked") or inventory_count(type_id) > 0
 
     def _price(self, type_id, fallback):
         shop = component("shop")
@@ -99,7 +85,7 @@ class StorageExpander:
 
     def step(self):
         """One pass. Returns a one-line summary (IDLE_SUMMARY when every storage outpost has room)."""
-        short = sorted((free_slots(o), getattr(o, "id", "")) for o in storage_outposts(self._outposts()))
+        short = sorted((free_slots(o), getattr(o, "id", "")) for o in storage_outposts(outposts()))
         short = [(free, outpost_id) for free, outpost_id in short if free < FREE_SLOTS_MIN and outpost_id]
         if not short:
             self.warning.update(False)

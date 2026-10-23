@@ -579,11 +579,8 @@ def network_habitats(type_id="habitat"):
     """(sorted ids of `type_id` buildings on the network, home OutpostRef or None)."""
     ids = []
     home = None
-    network = get_component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return ids, home
     try:
-        for outpost in network.outposts():
+        for outpost in components.outposts():
             if getattr(outpost, "is_home", False):
                 home = outpost
             for ref in outpost.buildings(type_id):

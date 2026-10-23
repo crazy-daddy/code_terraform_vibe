@@ -6,6 +6,7 @@
 # (lib/vehicle_energy.py) and VehicleChargingMixin (lib/vehicle_charging.py)
 # pass in what they used to read from self.
 
+import components
 import geometry
 from components import home_outpost
 from construction_plan import coords_of
@@ -44,31 +45,23 @@ def _scan_stations():
     stations = []
     found_ids = set()
 
-    outpost_net = get_component("outpost_network")
-    if outpost_net and hasattr(outpost_net, "outposts"):
+    for op in components.outposts():
+        if not hasattr(op, "buildings"):
+            continue
         try:
-            outposts = outpost_net.outposts()
+            buildings = op.buildings(CHARGING_STATION_TYPE_ID)
         except Exception as error:
-            swallowed("charging_stations.all_stations: outpost_net.outposts", error)
-            outposts = []
-
-        for op in outposts:
-            if not hasattr(op, "buildings"):
+            swallowed("charging_stations.all_stations: op.buildings", error)
+            continue
+        for b in buildings:
+            b_id = getattr(b, "id", "")
+            if not b_id or b_id in found_ids:
                 continue
-            try:
-                buildings = op.buildings(CHARGING_STATION_TYPE_ID)
-            except Exception as error:
-                swallowed("charging_stations.all_stations: op.buildings", error)
+            pos = coords_of(getattr(b, "position", None))
+            if not pos:
                 continue
-            for b in buildings:
-                b_id = getattr(b, "id", "")
-                if not b_id or b_id in found_ids:
-                    continue
-                pos = coords_of(getattr(b, "position", None))
-                if not pos:
-                    continue
-                found_ids.add(b_id)
-                stations.append({"id": b_id, "coords": pos, "outpost": getattr(op, "id", ""), "component": get_component(b_id) or b})
+            found_ids.add(b_id)
+            stations.append({"id": b_id, "coords": pos, "outpost": getattr(op, "id", ""), "component": get_component(b_id) or b})
 
     return stations
 

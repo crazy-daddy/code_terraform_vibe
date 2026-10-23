@@ -10,26 +10,14 @@
 # Depot: the first unlocked tier (building_plan._pick() proposes the first
 # alternative too); fleet_upgrade.py steps standing Depots up later.
 
-from components import component
+import components
 from item_tiers import DEPOT_KIT_TIERS, DEPOT_TYPE_TIERS
 from production import SourceCache, discover_building_ids, fabricator_unlocked_outputs, order_levels, set_order
-from swallow import swallowed
 
 # Order-book requester (production_orders.STANDING_ORDER_REQUESTERS).
 REQUESTER = "drone_kit_stock"
 SERVICE_TYPE_ID = "drone_service_station"
 SERVICE_KIT_ID = "drone_service_station_kit"
-
-
-def _outposts():
-    network = component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return []
-    try:
-        return list(network.outposts())
-    except Exception as error:
-        swallowed("drone_kit_stock._outposts: network.outposts", error)
-        return []
 
 
 def _lacks(outposts, type_ids):
@@ -50,7 +38,7 @@ def wanted_kits(outposts, unlocked):
 
 def publish_drone_kit_order(cache: "SourceCache"):
     """Writes wanted_kits() as REQUESTER's order (no write when unchanged)."""
-    outposts = _outposts()
+    outposts = components.outposts()
     if not outposts:
         return
     wanted = wanted_kits(outposts, fabricator_unlocked_outputs(cache))

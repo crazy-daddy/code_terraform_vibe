@@ -51,6 +51,36 @@ def key_coords(key):
         return None
 
 
+def key_tile(key):
+    """Integer tile (x, y) of a 'poi_X_Y' or legacy 'X:Y' key, rounded like
+    scanned_poi_coords; None when the key carries no coords."""
+    coords = key_coords(key)
+    if coords is None:
+        return None
+    return int(round(coords[0])), int(round(coords[1]))
+
+
+def merge_unsupported(shared, rover, pioneer):
+    """(entries, migrated): one dict of all unsupported entries, legacy
+    pioneer keys moved to 'poi_X_Y', then legacy rover, then shared entries on
+    top; migrated counts the renamed pioneer keys. Non-dict inputs are ignored."""
+    entries = {}
+    migrated = 0
+    if isinstance(pioneer, dict):
+        for key, entry in pioneer.items():
+            if ":" in key and not key.startswith("poi_"):
+                tile = key_tile(key)
+                if tile is not None:
+                    key = f"poi_{tile[0]}_{tile[1]}"
+                    migrated += 1
+            entries[key] = entry
+    if isinstance(rover, dict):
+        entries.update(rover)
+    if isinstance(shared, dict):
+        entries.update(shared)
+    return entries, migrated
+
+
 @log.block(lambda key, *_, **__: f"resolve_coordinates('{key}')")
 def resolve_coordinates(key, entry, journal_sites=None):
     """
@@ -153,10 +183,7 @@ def clear_wrong_scanner_marker(x, y):
     if not markers or not archive or not archive.available:
         return False
 
-    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
-    if not isinstance(unsupported, dict):
-        return False
-
+    unsupported = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
     target_x, target_y = int(x), int(y)
     cleared = False
     for key, entry in unsupported.items():
@@ -258,9 +285,9 @@ def update_unsupported_markers(clear_previous=True):
         return 0
 
     # Read unsupported targets
-    unsupported = archive.get(SURVEY_UNSUPPORTED_KEY, {}) or {}
+    unsupported = archive.get_dict(SURVEY_UNSUPPORTED_KEY)
 
-    if not isinstance(unsupported, dict) or not unsupported:
+    if not unsupported:
         log.print("No unsupported targets found in archive.")
         if clear_previous:
             markers.clear(MARKER_PREFIX)

@@ -74,8 +74,7 @@ def biomass_complete():
 
 
 def retire_state():
-    raw = archive.get(RETIRE_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(RETIRE_KEY)
 
 
 def _call(obj, method, default):

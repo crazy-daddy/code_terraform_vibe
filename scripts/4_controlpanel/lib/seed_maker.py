@@ -185,8 +185,7 @@ class SeedMakerController:
     # ----------------------------------------------------- tried / claims
 
     def _refresh_tried(self):
-        raw = archive.get(TRIED_KEY, {})
-        self._tried = raw if isinstance(raw, dict) else {}
+        self._tried = archive.get_dict(TRIED_KEY)
 
     def _claim(self, key, stage, curr_tick):
         """Atomically claims `key` for this maker. Returns False if tried or held by a live peer."""

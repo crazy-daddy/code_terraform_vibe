@@ -10,6 +10,7 @@
 # or paused (prune_planned()). Pioneers prune construction.priority themselves.
 
 from archive import archive
+from components import outposts
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY
 from grid_geom import bridge_tiles, run_tiles, tile_centre
 from infra_topology import NETWORKS_KEY
@@ -24,17 +25,8 @@ def _blueprints():
 
 def _construction_outpost():
     """OutpostRef where Constructor Pioneers load (production.construction_site_id()); None = home."""
-    network = get_component("outpost_network")
-    if network is None:
-        return None
     site_id = construction_site_id()
-    try:
-        for ref in network.outposts() or []:
-            if ref.id == site_id:
-                return ref
-    except Exception as error:
-        swallowed("blueprint_queue._construction_outpost: outpost_network.outposts", error)
-    return None
+    return next((ref for ref in outposts() if ref.id == site_id), None)
 
 
 def stock(item_id):
@@ -270,8 +262,7 @@ def open_planned(kinds=None, prio=None):
 
 def planned():
     """autoplay.planned as a dict ({} when missing or malformed)."""
-    raw = archive.get(PLANNED_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(PLANNED_KEY)
 
 
 def prune_planned(live_ids, jobs_ok):

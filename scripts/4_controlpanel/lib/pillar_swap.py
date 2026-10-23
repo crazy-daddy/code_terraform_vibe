@@ -36,7 +36,7 @@
 import cash
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, undeploy, upgrade
-from components import component, machine_tier, set_powered, start_script
+from components import component, machine_tier, outposts, set_powered, start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -157,16 +157,8 @@ class PillarSwap:
 
     # ------------------------------------------------------------ lookups
 
-    def _outposts(self):
-        network = component("outpost_network")
-        try:
-            return network.outposts() if network else []
-        except Exception as error:
-            swallowed("pillar_swap._outposts: network.outposts", error)
-            return []
-
     def _ids_at(self, outpost_id, type_id):
-        for outpost in self._outposts():
+        for outpost in outposts():
             if getattr(outpost, "id", "") == outpost_id:
                 try:
                     return sorted(ref.id for ref in outpost.buildings(type_id))
@@ -177,7 +169,7 @@ class PillarSwap:
     def _machines(self, type_id):
         """[(outpost_id, machine_id)] of every deployed type_id, sorted."""
         found = []
-        for outpost in self._outposts():
+        for outpost in outposts():
             try:
                 refs = outpost.buildings(type_id)
             except Exception as error:

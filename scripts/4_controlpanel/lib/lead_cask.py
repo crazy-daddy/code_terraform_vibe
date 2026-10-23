@@ -21,7 +21,7 @@
 # cask room. Entries older than INBOUND_STALE_TICKS are ignored and pruned.
 
 from archive import archive
-from components import home_outpost
+from components import home_outpost, outposts
 from game_clock import is_fresh
 from swallow import swallowed
 
@@ -67,20 +67,8 @@ REACTOR_FUEL_FRESH_TICKS = 1800
 ROD_EMERGENCY_HOURS = 12.0
 
 
-def _all_outposts():
-    network = get_component("outpost_network")
-    if network is None or not hasattr(network, "outposts"):
-        return []
-    try:
-        return list(network.outposts())
-    except Exception as error:
-        swallowed("lead_cask._all_outposts: network.outposts", error)
-        return []
-
-
 def roles():
-    stored = archive.get(ROLES_KEY, {})
-    return stored if isinstance(stored, dict) else {}
+    return archive.get_dict(ROLES_KEY)
 
 
 def _cask(cask_id) -> "LeadCask | None":
@@ -244,7 +232,7 @@ def rod_emergency(tick, entries=None):
 
 def network_cask_stock(item_id):
     """Units of item_id in every Lead Cask on the network."""
-    return sum(cask_stock(item_id, outpost) for outpost in _all_outposts())
+    return sum(cask_stock(item_id, outpost) for outpost in outposts())
 
 
 def room_for(item_id, outpost: "OutpostRef | None" = None, casks=None):
@@ -366,7 +354,7 @@ def _set_role(cask_id, role, existing_ids):
 
 def _live_cask_ids():
     ids = set()
-    for outpost in _all_outposts():
+    for outpost in outposts():
         try:
             for ref in outpost.buildings(LEAD_CASK_TYPE_ID) or []:
                 ids.add(getattr(ref, "id", ""))

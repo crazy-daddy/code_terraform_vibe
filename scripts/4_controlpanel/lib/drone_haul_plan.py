@@ -31,6 +31,7 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import components
 import drill_sites
 import geometry
 import logistics_requests
@@ -136,12 +137,7 @@ class HaulMemory:
 
 
 def outposts_by_id():
-    network = get_component("outpost_network")
-    try:
-        return {o.id: o for o in network.outposts()} if network else {}
-    except Exception as error:
-        swallowed("drone_haul_plan.outposts_by_id: network.outposts", error)
-        return {}
+    return {o.id: o for o in components.outposts()}
 
 
 def depot_layout(drone: "DroneController"):

@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import autoplay_roles
 import supply_tiers
 from blueprint_queue import cancel, job_need, open_planned, queue_structure, stock
-from components import home_outpost_id
+from components import home_outpost_id, outposts
 from construction_plan import EXTRACTOR_KITS
 from grid_geom import extractor_box, manhattan, outpost_box, tile_at
 from infra_topology import EXTRACTOR_KINDS, outpost_positions, surveyed_sites
@@ -118,16 +118,8 @@ def drill_candidates(mine_rows, wanted, smelter_boxes, taken):
 
 def smelter_outposts():
     """({outpost_id: ores its Smelters take}, every ore wanted) over outpost_network."""
-    network = get_component("outpost_network")
-    if network is None:
-        return ({}, set())
-    try:
-        refs = list(network.outposts() or [])
-    except Exception as error:
-        swallowed("extractor_plan.smelter_outposts: outpost_network.outposts", error)
-        return ({}, set())
     out = {}
-    for ref in refs:
+    for ref in outposts():
         ores = smelter_ores(ref)
         if ores:
             out[ref.id] = set(ores)

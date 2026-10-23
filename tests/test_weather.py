@@ -1,6 +1,7 @@
 import unittest
 
 import weather_signals as weather
+from game_stubs import OutpostNetwork
 from harness import StubTestCase
 
 
@@ -83,6 +84,21 @@ class ControllerTests(StubTestCase):
     def test_non_leader_ends(self):
         stations = self._stations(["frozen", "coastal"])
         self.assertFalse(weather.WeatherController(stations[1]).step())
+
+    def test_network_raise_keeps_last_stations(self):
+        stations = self._stations(["frozen", "coastal"])
+        controller = weather.WeatherController(stations[0])
+        self.assertTrue(controller.refresh_stations())
+        known = list(controller.stations)
+        self.assertEqual(len(known), 2)
+
+        class _RaisingNetwork(OutpostNetwork):
+            def outposts(self):
+                raise RuntimeError("network offline")
+
+        self.world.services["outpost_network"] = _RaisingNetwork(self.world)
+        self.assertTrue(controller.refresh_stations())
+        self.assertEqual(controller.stations, known)  # one bad read keeps the last list, no false coverage warning
 
     def test_thunder_decoded_noise_ignored_and_not_reopened(self):
         stations = self._stations(["frozen"])

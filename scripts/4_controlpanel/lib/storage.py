@@ -281,8 +281,7 @@ def forget_storage_discovery():
 
 
 def _retiring_entries():
-    raw = archive.get(RETIRING_STORES_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(RETIRING_STORES_KEY)
 
 
 def retiring_store_ids():
@@ -605,13 +604,8 @@ def recently_busy(source_id, now=None):
 
 def inventory_stack_size():
     """Current Inventory stack size per slot: 10, or 20 once Bigger Stacks is unlocked."""
-    research = components.component("research")
-    if research and hasattr(research, "is_unlocked"):
-        try:
-            if research.is_unlocked(BIGGER_STACKS_TECH_ID):
-                return BIGGER_STACKS_SIZE
-        except Exception as error:
-            swallowed("storage.inventory_stack_size: research.is_unlocked", error)
+    if components.research_unlocked(BIGGER_STACKS_TECH_ID, "storage.inventory_stack_size"):
+        return BIGGER_STACKS_SIZE
     return DEFAULT_STACK_SIZE
 
 
@@ -676,13 +670,7 @@ def fleet_part_keep(item_id):
 
 def warehouses_unlocked():
     """True once Warehouse research is unlocked."""
-    research = components.component("research")
-    if research and hasattr(research, "is_unlocked"):
-        try:
-            return bool(research.is_unlocked(WAREHOUSE_TECH_ID))
-        except Exception as error:
-            swallowed("storage.warehouses_unlocked: research.is_unlocked", error)
-    return False
+    return components.research_unlocked(WAREHOUSE_TECH_ID, "storage.warehouses_unlocked")
 
 
 def default_stock_target():

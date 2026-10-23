@@ -170,10 +170,7 @@ def read_blocked():
 
 def read_unsupported():
     """survey.unsupported_targets as a dict ({} when unreadable)."""
-    if not archive or not archive.available:
-        return {}
-    raw = archive.get(SURVEY_UNSUPPORTED_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(SURVEY_UNSUPPORTED_KEY)
 
 
 def read_known_biomass():

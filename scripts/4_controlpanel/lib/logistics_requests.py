@@ -353,8 +353,7 @@ def pickups_snapshot():
     claim_pickups(), which then only has to account for what other haulers
     reserved after this point.
     """
-    raw = archive.get(PICKUPS_KEY, {})
-    return dict(raw) if isinstance(raw, dict) else {}
+    return dict(archive.get_dict(PICKUPS_KEY))
 
 
 def planning_snapshot(vehicle_name):
@@ -482,11 +481,8 @@ def pickup_dest(vehicle_name):
 def in_flight(dest_outpost_id, curr_tick=None):
     """{item_id: units} currently being hauled towards dest_outpost_id."""
     tick = curr_tick if curr_tick is not None else now_tick()
-    raw = archive.get(PICKUPS_KEY, {})
     totals = {}
-    if not isinstance(raw, dict):
-        return totals
-    for entry in raw.values():
+    for entry in archive.get_dict(PICKUPS_KEY).values():
         if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
             continue
         item_id = entry.get("item_id")
@@ -498,11 +494,8 @@ def in_flight(dest_outpost_id, curr_tick=None):
 def aboard_units(curr_tick=None):
     """{item_id: units} loaded aboard a hauler and not delivered yet, any destination."""
     tick = curr_tick if curr_tick is not None else now_tick()
-    raw = archive.get(PICKUPS_KEY, {})
     totals = {}
-    if not isinstance(raw, dict):
-        return totals
-    for entry in raw.values():
+    for entry in archive.get_dict(PICKUPS_KEY).values():
         if not entry.get("aboard") or not is_fresh(entry, tick, PICKUP_STALE_TICKS):
             continue
         item_id = entry.get("item_id")
@@ -519,11 +512,8 @@ def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
     count against it.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
-    raw = archive.get(PICKUPS_KEY, {})
     totals = {}
-    if not isinstance(raw, dict):
-        return totals
-    for entry in raw.values():
+    for entry in archive.get_dict(PICKUPS_KEY).values():
         if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("source") != source_id:
             continue
         if exclude_vehicle is not None and entry.get("vehicle") == exclude_vehicle:

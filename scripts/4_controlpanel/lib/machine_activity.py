@@ -46,7 +46,6 @@ from atomic import run_atomic, run_batched
 from fleet_status import FLEET_STATUS_KEY, is_idle
 from item_tiers import DRONE_CHASSIS_TIERS
 from parking_client import PARK_REQUESTS_KEY, PARKED_KEY
-from swallow import swallowed
 from tree_console import TreeConsole
 
 log = TreeConsole(module="machine_activity")
@@ -211,12 +210,7 @@ def _signal_groups(classified, previous_groups):
 
 
 def _read_dict(key):
-    try:
-        value = archive.get(key, {}) or {}
-    except Exception as error:
-        swallowed(f"machine_activity._read_dict: archive.get({key})", error)
-        return {}
-    return value if isinstance(value, dict) else {}
+    return archive.get_dict(key)
 
 
 def record(snapshot, now):

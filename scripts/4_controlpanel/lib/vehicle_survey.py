@@ -24,6 +24,12 @@ SURVEY_SPIRAL_KEY = "survey.spiral"
 LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
 
+def spiral_next_index(default=0):
+    """Next unscanned spiral waypoint index (SURVEY_SPIRAL_KEY "next_index");
+    default when missing or the stored progress is not a dict."""
+    return archive.get_dict(SURVEY_SPIRAL_KEY).get("next_index", default)
+
+
 class VehicleSurveyMixin:
     """
     Sonar field operations, mixed into VehicleController; SurveyJob
@@ -222,10 +228,10 @@ class VehicleSurveyMixin:
                 if getattr(point, "scanned", False):
                     continue
                 key = f"poi_{point.x}_{point.y}"
-                legacy_key = f"{point.x}:{point.y}"
 
                 # Check unsupported / blacklisted targets across fleet
-                target_entry = unsupported_targets.get(key) or unsupported_targets.get(legacy_key)
+                # (legacy 'X:Y' pioneer keys arrive renamed to 'poi_X_Y')
+                target_entry = unsupported_targets.get(key)
                 if target_entry:
                     can_attempt, attempt_reason = self._host.can_attempt_target(key, target_entry)
                     log.trace(f"{key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
@@ -363,7 +369,7 @@ class VehicleSurveyMixin:
             )
 
         def update_progress(current):
-            progress = dict(current or {})
+            progress = dict(current) if isinstance(current, dict) else {}
             waypoints = list(progress.get("waypoints", []))
             entry = {
                 "index": point_index,

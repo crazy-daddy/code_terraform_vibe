@@ -100,7 +100,8 @@ from game_rules import RAW_ORE_ITEM_IDS, SMELT_PRODUCTS
 from construction_plan import EXTRACTOR_KITS
 from priority import BLOCKER, NEED, NONE, STOCK, UPGRADE, band, ladder_deficits, ladder_level, ladder_promote, ladder_raise, ladder_total
 from tree_console import TreeConsole
-from components import component
+import components
+from components import research_unlocked
 from demand_publisher import PUBLISHER
 from swallow import swallowed
 from game_clock import is_fresh, now_tick
@@ -169,17 +170,6 @@ CONSTRUCTION_STOCK_REQUESTER = "construction_stock"
 _SITE_EXTRACTORS = {"water": "water_pump", "oil": "oil_pump", "thermal": "thermal_cap"}
 _EXOTIC_EXTRACTORS = {"gas": "exotic_gas_cap", "liquid": "exotic_spring_tap"}
 _SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
-
-
-def _outposts():
-    network = component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return []
-    try:
-        return list(network.outposts())
-    except Exception as error:
-        swallowed("site_supply._outposts: network.outposts", error)
-        return []
 
 
 def free_elsewhere(item_ids, site_id, outposts, requests, tick, reads=None):
@@ -383,17 +373,8 @@ def _stock_table(table, outpost: "OutpostRef"):
             continue
         for item_id, units in items.items():
             out[item_id] = max(out.get(item_id, 0), units)
-    research = None
     for item_id, research_id in SITE_STOCK_RESEARCH.items():
-        if item_id not in out:
-            continue
-        research = research or component("research")
-        try:
-            unlocked = bool(research and research.is_unlocked(research_id))
-        except Exception as error:
-            swallowed("site_supply._stock_table: research.is_unlocked", error)
-            unlocked = False
-        if not unlocked:
+        if item_id in out and not research_unlocked(research_id, "site_supply._stock_table"):
             del out[item_id]
     return out
 
@@ -781,7 +762,7 @@ def publish_site_requests(curr_tick):
     where nothing is needed any more, raised by stranded ore or goods headed
     to that site) and home's evict request. Returns
     {outpost_id: wants}."""
-    outposts = _outposts()
+    outposts = components.outposts()
     reads = PlanReads(curr_tick)
     requests = reads.requests
     cache = SourceCache()

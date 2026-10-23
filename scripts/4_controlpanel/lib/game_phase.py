@@ -286,8 +286,7 @@ def read_tp():
 
 
 def read_history():
-    raw = archive.get(HISTORY_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(HISTORY_KEY)
 
 
 def snapshot(now, last=None):

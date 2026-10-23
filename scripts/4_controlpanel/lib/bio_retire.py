@@ -211,8 +211,7 @@ class BioRetirement:
 
     def step(self, current_tick=0):
         """One pass. Returns the published status line."""
-        state = archive.get(RETIRE_KEY, {}) or {}
-        state = state if isinstance(state, dict) else {}
+        state = archive.get_dict(RETIRE_KEY)
         done = list(state.get("done") or [])
         unsold = list(state.get("unsold") or [])
         exchanges = self._machines((EXCHANGE_TYPE_ID,))

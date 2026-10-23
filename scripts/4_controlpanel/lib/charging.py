@@ -1,6 +1,7 @@
 # Shared Library for Vehicle Charging Station & Fleet Rescue Management
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
+import components
 import geometry
 from station_controller import StationController
 from swallow import swallowed
@@ -34,19 +35,17 @@ class ChargingStationController(StationController):
         """
         refs = []
 
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    for building in outpost.buildings("charging_station"):
-                        pos = getattr(building, "position", None)
-                        b_id = getattr(building, "id", None)
-                        if b_id and pos and len(pos) >= 2:
-                            coord = (float(pos[0]), float(pos[1]))
-                            if not any(r["id"] == b_id for r in refs):
-                                refs.append({"id": b_id, "coords": coord})
-            except Exception as error:
-                swallowed("charging.ChargingStationController.all_station_refs: network.outposts", error)
+        try:
+            for outpost in components.outposts():
+                for building in outpost.buildings("charging_station"):
+                    pos = getattr(building, "position", None)
+                    b_id = getattr(building, "id", None)
+                    if b_id and pos and len(pos) >= 2:
+                        coord = (float(pos[0]), float(pos[1]))
+                        if not any(r["id"] == b_id for r in refs):
+                            refs.append({"id": b_id, "coords": coord})
+        except Exception as error:
+            swallowed("charging.ChargingStationController.all_station_refs: outpost.buildings", error)
 
         if not any(r["id"] == self.name for r in refs):
             station_outpost = getattr(self.station, "outpost", None)

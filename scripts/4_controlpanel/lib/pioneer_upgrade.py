@@ -26,6 +26,7 @@ import drill_sites
 import logistics_requests
 import outpost_mining
 from archive import archive
+from components import all_research_unlocked, research_unlocked
 from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, can_cut
 from parking_client import resume_vehicle
 from pioneer_split import best_holder_count, split_cost
@@ -67,22 +68,12 @@ SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"
 
 def is_sport_nav_requested(vehicle_name):
     """Module-level so vehicles_panel.py's Fleet card can read the pending flag without instantiating a controller."""
-    requests = archive.get(SPORT_NAV_REQUEST_KEY, {}) or {}
-    if not isinstance(requests, dict):
-        return False
-    return bool(requests.get(vehicle_name, False))
+    return bool(archive.get_dict(SPORT_NAV_REQUEST_KEY).get(vehicle_name, False))
 
 
 def sport_nav_unlocked():
     """True once research_nav_sport is done, so the Fleet card hides its Sport Nav button before that."""
-    research = get_component("research")
-    if not research:
-        return False
-    try:
-        return bool(research.is_unlocked(SPORT_NAV_RESEARCH_ID))
-    except Exception as error:
-        swallowed("pioneer_upgrade.sport_nav_unlocked: research.is_unlocked", error)
-        return False
+    return research_unlocked(SPORT_NAV_RESEARCH_ID, "pioneer_upgrade.sport_nav_unlocked")
 
 
 def request_sport_nav(vehicle_name):
@@ -168,12 +159,7 @@ class PioneerUpgradeMixin:
         the same cycle could both pass; the second Seismic then just shares
         the work.
         """
-        research = get_component("research")
-        try:
-            if not research or not all(research.is_unlocked(r) for r in deep_oil.SEISMIC_RESEARCH_IDS):
-                return False
-        except Exception as error:
-            swallowed("pioneer_upgrade.PioneerUpgradeMixin._seismic_wanted: research.is_unlocked", error)
+        if not all_research_unlocked(deep_oil.SEISMIC_RESEARCH_IDS, "pioneer_upgrade.PioneerUpgradeMixin._seismic_wanted"):
             return False
         journal = get_component("journal")
         try:

@@ -33,7 +33,7 @@
 #    "mode": "research" | "even" | "done", "tick"}
 
 import game_phase
-from components import component, machine_tier
+from components import component, machine_tier, outposts
 from pillar_swap import MAX_SWAP_TIER, PILLAR_LABELS, PILLARS, is_running, pack_id
 from storage import inventory_count
 from swallow import swallowed
@@ -214,17 +214,14 @@ def proposal_id(focus):
 
 def read_generators():
     """{generator type_id: [tier, ...]} over every outpost; {} when unreadable."""
-    network = component("outpost_network")
     out = {}
-    if network is None:
-        return out
     try:
-        for ref in network.outposts() or []:
+        for ref in outposts():
             for type_id in PILLARS.values():
                 for building in ref.buildings(type_id) or []:
                     out.setdefault(type_id, []).append(machine_tier(building.id))
     except Exception as error:
-        swallowed("focus_plan.read_generators: outpost_network", error)
+        swallowed("focus_plan.read_generators: ref.buildings", error)
         return {}  # a partial count could name the wrong current pillar
     return out
 

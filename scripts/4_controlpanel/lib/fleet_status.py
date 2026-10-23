@@ -155,8 +155,7 @@ def publish(name, telemetry):
 
 def get_all():
     """Returns the whole {name: telemetry} dict (empty if missing/malformed)."""
-    status = archive.get(FLEET_STATUS_KEY, {})
-    return status if isinstance(status, dict) else {}
+    return archive.get_dict(FLEET_STATUS_KEY)
 
 
 def get(name):

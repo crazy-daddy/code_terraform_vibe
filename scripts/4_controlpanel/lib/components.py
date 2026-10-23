@@ -139,9 +139,40 @@ def home_outpost() -> "OutpostRef | None":
         return None
 
 
+def outposts() -> "list[OutpostRef]":
+    """Every owned OutpostRef (outpost_network.outposts()); [] when the network
+    is missing or the call raises."""
+    network = component("outpost_network")
+    if network is None:
+        return []
+    try:
+        return list(network.outposts())
+    except Exception as error:
+        swallowed("components.outposts: network.outposts", error)
+        return []
+
+
 def home_outpost_id():
     """Id of home_outpost(); None when unreadable."""
     return getattr(home_outpost(), "id", None)
+
+
+def research_unlocked(research_id, where="components.research_unlocked"):
+    """research.is_unlocked(research_id); False when the component is missing
+    or the call raises (swallowed under `where`)."""
+    research = component("research")
+    if research is None:
+        return False
+    try:
+        return bool(research.is_unlocked(research_id))
+    except Exception as error:
+        swallowed(where, error)
+        return False
+
+
+def all_research_unlocked(research_ids, where="components.all_research_unlocked"):
+    """True when every id in research_ids is unlocked; False for an empty list."""
+    return bool(research_ids) and all(research_unlocked(research_id, where) for research_id in research_ids)
 
 
 def machine_tier(machine_id):

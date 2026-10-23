@@ -97,6 +97,8 @@ def missing_biomes(stations):
 def discover_stations():
     """[(station_id, biome, powered)] for every Weather Station on the outpost network."""
     stations = []
+    # Not components.outposts(): a raise must reach refresh_stations(), which
+    # keeps the last list instead of reading every biome as uncovered.
     network = get_component("outpost_network")
     if network is None:
         return stations

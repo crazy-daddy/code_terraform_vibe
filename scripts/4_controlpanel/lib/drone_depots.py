@@ -9,7 +9,7 @@
 
 import geometry
 from archive import archive
-from components import drone_service_station
+from components import drone_service_station, outposts, research_unlocked
 from game_clock import TickCache
 from item_tiers import DEPOT_TYPE_TIERS
 from swallow import swallowed
@@ -82,14 +82,7 @@ HELI_RESEARCH_ID = "research_heli_drones"
 
 def heli_unlocked():
     """True once Heli-Drones is researched: heli modules can be coupled (False when unreadable)."""
-    research = get_component("research")
-    if not research:
-        return False
-    try:
-        return bool(research.is_unlocked(HELI_RESEARCH_ID))
-    except Exception as error:
-        swallowed("drone_depots.heli_unlocked: research.is_unlocked", error)
-        return False
+    return research_unlocked(HELI_RESEARCH_ID, "drone_depots.heli_unlocked")
 
 
 def heli_oil_ready():
@@ -160,40 +153,33 @@ def _scan_drone_buildings(type_id):
     refs = []
     found_ids = set()
     type_ids = type_id if isinstance(type_id, (tuple, list)) else (type_id,)
-    network = get_component("outpost_network")
-    if network and hasattr(network, "outposts"):
-        try:
-            outposts = network.outposts()
-        except Exception as error:
-            swallowed("drone_depots.discover_drone_buildings: network.outposts", error)
-            outposts = []
-        for outpost in outposts:
-            if not hasattr(outpost, "buildings"):
+    for outpost in outposts():
+        if not hasattr(outpost, "buildings"):
+            continue
+        buildings = []
+        for t_id in type_ids:
+            try:
+                buildings.extend(outpost.buildings(t_id))
+            except Exception as error:
+                swallowed("drone_depots.discover_drone_buildings: buildings.extend", error)
                 continue
-            buildings = []
-            for t_id in type_ids:
-                try:
-                    buildings.extend(outpost.buildings(t_id))
-                except Exception as error:
-                    swallowed("drone_depots.discover_drone_buildings: buildings.extend", error)
-                    continue
-            for b in buildings:
-                b_id = getattr(b, "id", "")
-                if not b_id or b_id in found_ids:
-                    continue
-                pos = _extract_coords(getattr(b, "position", None))
-                if not pos:
-                    continue
-                found_ids.add(b_id)
-                refs.append(
-                    {
-                        "id": b_id,
-                        "name": getattr(b, "name", "") or "",
-                        "coords": pos,
-                        "outpost": getattr(b, "outpost", None),
-                        "outpost_id": getattr(b, "outpost_id", "") or "",
-                    }
-                )
+        for b in buildings:
+            b_id = getattr(b, "id", "")
+            if not b_id or b_id in found_ids:
+                continue
+            pos = _extract_coords(getattr(b, "position", None))
+            if not pos:
+                continue
+            found_ids.add(b_id)
+            refs.append(
+                {
+                    "id": b_id,
+                    "name": getattr(b, "name", "") or "",
+                    "coords": pos,
+                    "outpost": getattr(b, "outpost", None),
+                    "outpost_id": getattr(b, "outpost_id", "") or "",
+                }
+            )
     return refs
 
 
@@ -286,8 +272,7 @@ def resolve_home(name, depots, home_depot, nearest_depot_fn, log):
         else:
             log.level("warn").print(f"[{name}] HOME_DEPOT '{wanted}' matches no Drone Depot id, name or outpost id; falling back to auto-detection.")
     if chosen is None:
-        pins = archive.get(HOME_DEPOTS_KEY, {}) or {}
-        pinned = pins.get(name) if isinstance(pins, dict) else None
+        pinned = archive.get_dict(HOME_DEPOTS_KEY).get(name)
         if pinned:
             chosen, pool_id = match(str(pinned))
             if chosen:

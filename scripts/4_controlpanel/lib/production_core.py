@@ -2,6 +2,7 @@
 # Fabricator, Fuel Assembler, Supply Dock), machine/outpost site ids and the
 # shared `log` every production_*.py module writes to (one TreeConsole, so
 # nested blocks across modules indent as one tree).
+import components
 from archive import archive
 from components import component, fabricator, home_outpost, smelter
 from game_clock import TickCache, is_fresh, now_tick
@@ -131,12 +132,9 @@ SMELTER_TYPE_ID = "smelter"
 def _all_outposts():
     """Every owned OutpostRef (outpost_network.outposts()), or just home when
     the network can't be listed."""
-    network = component("outpost_network")
-    if network and hasattr(network, "outposts"):
-        try:
-            return list(network.outposts())
-        except Exception as error:
-            swallowed("production_core._all_outposts: network.outposts", error)
+    found = components.outposts()
+    if found:
+        return found
     home = home_outpost()
     return [home] if home else []
 

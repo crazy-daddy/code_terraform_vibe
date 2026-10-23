@@ -41,6 +41,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Behavior change (safer): `drone_depots.py:85`, `drone_scout.py:25`, `drone_weather.py:132`, `pioneer_upgrade.py:78` and `:171` call `get_component("research")` outside their `try`, so a raised lookup escapes today; through `components.component` it is swallowed and reads "not unlocked". The storage, early_buyer, site_supply, game_phase, building_swap and storage_expand copies already go through `component()`; the merge aligns the rest with them, it is not the same behavior at those five sites.
   - Tier-0 cleanup, not a bug: `s0/power/solar.py:29` binds `research` at import, but docs/components/research.md says the component is "Available from the beginning" and `get_component` returns None only for an id no entity has (docs/guide/builtins_and_commands.md:113), so the bind never misses (the `research_computer` gate at :247 is the Ship Computer building, a different thing). What remains: the id-variant loop at :98-106 probes non-public ids that research.md says read False (dead weight), and the import-time bind is style. Nit, low risk, S, no owner change (tier 0).
   - Risk: low. Size: M (12 sites, 2 helpers).
+- Landed: Phase 1 (helpers-impl-1), `refactor(components): one research unlock guard`.
 
 ## Depot walks (DEPOT_TYPE_TIERS: drone_station, drone_station_medium, drone_station_large)
 - Sites:
@@ -89,6 +90,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Owner `L/vehicle_survey.py`: `spiral_next_index(default=0) -> int` (`archive.get_dict(SURVEY_SPIRAL_KEY).get("next_index", default)`, see "Archive dict read"); `update_progress` starts from `archive.get_dict`-shaped input (`current if isinstance(current, dict) else {}`). Both job_survey sites call the helper.
   - Constant: one definition (CODE_GUIDES "One definition per constant"): archive_cleaner imports `SURVEY_SPIRAL_KEY` from vehicle_survey (no cycle: vehicle_survey's chain never reaches archive_cleaner), or both import it from a leaf.
   - Risk: low. Size: S.
+- Landed: Phase 1 (helpers-impl-1), `fix(survey): read spiral progress as a dict` (`LEGACY_PIONEER_SPIRAL_KEY` moved to vehicle_survey too).
 
 ## Guarded component read with default (power state, grids, balances)
 - Sites:
@@ -171,6 +173,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Sites merged: the 20 A def-level wrappers keep their names (they document the key and are imported) and become `return archive.get_dict(KEY)`; the three try-guarded ones drop the `try` (see "try around archive.get"); the S1/S2 line-level sites and the three `ap/` wrappers switch as they are touched (`or {}` goes). Related: `is_flagged`, `is_sport_nav_requested`, the three PICKUPS readers, `vehicle_claims` :342/:444-446, `storage_take.py:60`. Two sites are not one-line swaps: `seed_maker._refresh_tried` :187 assigns `self._tried` (becomes `self._tried = archive.get_dict(TRIED_KEY)`), and `logistics_requests.pickups_snapshot` :357 returns `dict(raw)`, a shallow copy its caller may mutate while planning; it keeps the copy (`dict(archive.get_dict(PICKUPS_KEY))`), `get_dict` returns the stored object as `get` does.
   - Apart: `pillar_swap.swap_state` (None means "no swap state", its callers test it); `logistics_snapshot._entry` (an in-memory dict); `plant_terraformer._was_running`/`_last_batch_km2` (nested entry: `archive.get_entry(STATUS_KEY, self.name)` plus isinstance); `construction_lots`, `fluid_routing.get_tank_assignments`, `production_orders.get_manual_orders`, `survey_requests.read_*` (a cleaner validates values; the `archive.has` seed stays). `archive_cleaner` keeps `_reset_if_not_dict` (write side).
   - Risk: low (pure read, same result on every input). Size: L by count (~25 files), mechanical.
+- Landed: Phase 1 (helpers-impl-1), `refactor(archive): add get_dict for dict-valued keys` and the three `... use get_dict` batches. `archive_cleaner.clean_claims` keeps its raw reads (its write check compares the raw values). About 140 unlisted `archive.get(K, {})` lines switch as they are touched.
 
 ## Archive read, then per-entry filter or normalise
 - Sites: `L/production_docks.py:16 dock_order_prios`, `L/supply_dock.py:209 order_overrides` (identical body), `L/logistics_snapshot.py:129 _units_in`, `L/construction_plan.py:74 clean_priorities`, `L/lead_cask.py:262 _live_inbound`, `L/fluid_routing.py:221 _prune_conflicts`, `L/outpost_flow.py:40 read`, `L/production_orders.py:265 order_consumer_sites`, `L/site_supply.py:489 construction_rush`, `ap/outpost_plan.py:519 load`
@@ -230,6 +233,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Rule: `archive.get` already swallows notebook errors (`archive.py:53-62`); the outer try only adds a second `swallowed`. In `construction_lots` the try also covers the cleaner, so not redundant there.
 - Found by: B
 - Verdict: **merge** into "Archive dict read": the first three become `archive.get_dict(key)`; `construction_lots` keeps its try (it guards `clean_priorities`/`held_kinds`, not the read). Risk: low. Size: S.
+- Landed: Phase 1 (helpers-impl-1), `refactor(archive): drop the double guard around dict reads`.
 
 ## Survey archive reads (unsupported targets, requests, blocked, biomass)
 - Sites:
@@ -244,6 +248,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Owner `L/survey_requests.py`, existing `read_unsupported() -> dict`. `drone_scout.py:44` imports survey_requests already and switches. `unsupported_markers` cannot import survey_requests (survey_requests imports unsupported_markers), so :156 and :261 use `archive.get_dict(SURVEY_UNSUPPORTED_KEY)` instead. `vehicle_claims` :342 and :444-446 likewise (`get_dict`).
   - Apart: `read_requests`, `read_blocked`, `read_known_biomass` (each a different cleaner and default; already one `archive.get` each).
   - Risk: low. Size: S.
+- Landed: Phase 1 (helpers-impl-1), `refactor(archive): line-level dict reads use get_dict` (the three bypassers, `vehicle_claims` :342) and `fix(survey): one unsupported-target merge for fleet and cleaner` (:444-446).
 
 ## Guarded get_component wrapper copies
 - Sites: `L/building_swap_upgrade.py:55 component` (adds a `where` label), `L/components.py:108 _component` (exported as `component` at :114-119)
@@ -303,6 +308,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Rule: one place reads the outpost list. The six `_outposts`/`_all_outposts` copies go (callers call `components.outposts()`); `outposts_by_id` = `{o.id: o for o in outposts()}`; `production_core._all_outposts` keeps its home fallback as `outposts() or ([home] if home else [])`; the prologue sites replace their own guard with the call (the walks stay, see their families).
   - Apart: `fleet_upgrade._drones` (fleet, not network; one site). `weather_signals.discover_stations` has no guard at all today (a raise escapes to its caller); the helper gives it one.
   - Risk: low. Size: M (~20 sites, one-line swaps).
+- Landed: Phase 1 (helpers-impl-1), `refactor(components): one outposts() read` and `refactor(autoplay): outpost prologues use components.outposts`. `site_evict` dropped its lazy `site_supply._outposts` import. `weather_signals.discover_stations` stays apart: its caller `refresh_stations` catches the raise and keeps the last station list, which `[]` would replace with a false "no station in any biome" warning. Not in the site list and still open: `storage_sweeps._all_outposts`, `role_demand._network_outposts`.
 
 ## Outpost-by-id lookup
 - Sites: `L/outpost_mining.py:74 outpost_by_id` (via `_outpost_network()`), `L/production_sites.py:139 outpost_by_site_id` (via `_all_outposts()`), `ap/blueprint_queue.py:25 _construction_outpost` (matches `construction_site_id()`), `L/building_ops.py:283 _ids_at` (home via `network.home()` else `outpost_by_id`), `L/pillar_swap.py:168 _ids_at` (inline scan)

@@ -60,6 +60,12 @@ class ArchiveClient:
             swallowed("archive.ArchiveClient.get: self.notebook.get", error)
             return default
 
+    def get_dict(self, key) -> dict:
+        """Dict stored under key. Missing, None or non-dict reads {}. Returns
+        the stored object, like get(): copy it before mutating."""
+        value = self.get(key, {})
+        return value if isinstance(value, dict) else {}
+
     def set(self, key, value):
         if self.notebook is None:
             return False

@@ -18,6 +18,7 @@
 # the job queue, each job with a cancel button while nothing is deployed yet
 # (or it is blocked).
 
+import components
 from drone_commission import DRONE_ROLES
 from fleet_commission import CANCELLABLE_STATES, cancel_job, job_home_base, job_kind, queue_drone, queue_pioneer
 from item_tiers import DEPOT_TYPE_TIERS
@@ -46,12 +47,7 @@ _last_outposts = {}
 
 def read_outposts():
     """([(id, name, is_home)] of every outpost, the same for those with a Drone Depot), home first."""
-    try:
-        network = get_component("outpost_network")
-        refs = list(network.outposts()) if network else []
-    except Exception as error:
-        swallowed("commission_card.read_outposts: network.outposts", error)
-        refs = []
+    refs = components.outposts()
     found, with_depot = [], []
     for ref in refs:
         entry = (getattr(ref, "id", ""), getattr(ref, "name", "") or getattr(ref, "id", ""), bool(getattr(ref, "is_home", False)))
