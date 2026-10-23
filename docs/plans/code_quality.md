@@ -65,6 +65,9 @@ so step 2 is needed.
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 
 ## Open candidates
+Plans (2026-10-23): the first two bullets in [notify_building_ops.md](notify_building_ops.md) (the `_notify`
+guard goes: `notify()` raises only on bad arguments), the next sweep in [helpers_sweep.md](helpers_sweep.md).
+
 - **`_notify(text, level, duration)`**: 4 identical copies (`reactor`, `oil_generator`, `power`, `power_solar`),
   each `notify()` in a swallowed try. About 10 raw `notify()` calls elsewhere have no guard (`bio`, `charging`,
   `drone_service`, `harvesting`, `fluid_routing`). One guarded helper, maybe next to `swallowed`.
