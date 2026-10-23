@@ -23,3 +23,37 @@ lib/production_source.py::SourceCache.fabricator_recipes ~ lib/production_source
 lib/drone_upgrade.py::DroneUpgradeMixin._couple ~ lib/drone_upgrade.py::DroneUpgradeMixin._uncouple  # opposite actions
 lib/vehicle_energy.py::cargo_units_count_for ~ lib/vehicle_energy.py::nav_speed_multiplier_for  # different tables
 lib/harvesting.py::HarvesterController.detect_base_sector ~ lib/harvesting.py::HarvesterController.get_heat  # safe call boilerplate, different reads
+lib/drone_haul_plan.py::haul_destinations ~ lib/drone_haul_plan.py::outpost_sources  # same depot-outpost loop, opposite questions
+lib/priority.py::ladder_add ~ lib/priority.py::ladder_raise  # max vs sum fold of the priority ladder
+lib/site_evict.py::stranded_goods ~ lib/site_evict.py::stranded_reagents  # same skeleton, the item source is the rule
+lib/drones_card.py::badge ~ lib/vehicles_card.py::badge  # last flag is the card's own
+lib/site_supply.py::free_elsewhere ~ lib/site_supply.py::free_elsewhere_tiers  # flat vs per-band
+lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
+lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/steam_condenser.py::SteamCondenserController.update_water_gate  # HysteresisLatch owns the rule; messages differ
+lib/steam_condenser.py::SteamCondenserController.update_water_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
+lib/charging_stations.py::station_at ~ lib/outpost_mining.py::outpost_by_id  # first building with coords vs outpost by id
+lib/lead_cask.py::rods_for_orders ~ lib/lead_cask.py::rods_free_for_mk4  # the held source is the rule each documents
+lib/fluid_routing.py::fill_pct_of ~ lib/fluid_routing.py::safe_is_stalled  # safe call boilerplate, different reads
+lib/logistics_requests.py::PlanReads.scan ~ lib/production_source.py::SourceCache.scan  # per-pass memo vs per-object cache, different lifetimes
+lib/production_source.py::SourceCache.fuel_assembler_recipes ~ lib/production_source.py::SourceCache.surveyed_sites  # cached accessors over different reads
+lib/logistics_snapshot.py::_new_reservations ~ lib/seed_supply.py::SeedSupplyController._deficits  # positive remainder idiom, the have source is each site's rule
+lib/logistics_snapshot.py::_new_reservations ~ lib/production_cascade.py::remote_dock_reservations  # positive remainder idiom, the have source is each site's rule
+lib/cash.py::balance ~ lib/components.py::machine_tier  # safe call boilerplate, different reads
+lib/bio.py::BioCollectorController.run ~ lib/bio.py::BioLabController.run  # step sleeps inside
+lib/production_cascade.py::outranking_order_wants ~ lib/pump_salt.py::salt_sources  # positive filters over different inputs
+lib/drone_depot.py::DroneDepotController._is_life_form ~ lib/essence_liquifier.py::EssenceLiquifierController.sample_biome  # bool vs biome id
+lib/oil_generator.py::OilGeneratorController.get_grid ~ lib/steam_turbine.py::SteamTurbineController.get_grid  # two controllers, no shared base
+lib/harvester_pure.py::merge_counts ~ lib/vehicle_mining.py::sum_bands  # keyed sum idiom
+lib/logistics_requests.py::sum_tiers ~ lib/vehicle_mining.py::sum_bands  # keyed sum idiom
+lib/drone_navigation.py::DroneNavigationMixin.is_stranded ~ lib/vehicle_navigation.py::VehicleNavigationMixin.is_at_base  # status-set test vs distance threshold
+lib/mission_pool.py::_outpost_in ~ lib/survey_requests.py::request_at  # different record shapes
+lib/harvesting.py::HarvesterController.get_heat ~ lib/harvesting.py::HarvesterController.get_position  # safe call boilerplate, different reads
+lib/harvester_hub.py::HarvesterHubMixin.stock_count ~ lib/logistics_requests.py::PlanReads.depot_holds  # per-pass memo, different sources
+autoplay/lib/fluid_outlook.py::read_contacts.biome_of ~ autoplay/lib/fluid_outlook.py::read_hazards.biome_of  # closures over different planet reads
+lib/vehicle_energy.py::VehicleEnergyMixin.active_modules_count ~ lib/vehicle_energy.py::VehicleEnergyMixin.nav_power_multiplier  # thin delegations to *_for helpers
+lib/seed_maker.py::SeedMakerController._read_life_forms ~ lib/seed_maker.py::SeedMakerController._recipes  # safe call boilerplate, different reads
+lib/drone_navigation.py::DroneNavigationMixin.current_drill ~ lib/drone_navigation.py::DroneNavigationMixin.current_station  # safe call boilerplate, different reads
+automation/orchestrator_automation.py::buy_early_if_due ~ automation/orchestrator_automation.py::plan_wildlife_if_due  # four-line step guards; automations are entrypoints
+lib/drone_cargo.py::DroneCargoMixin.cargo_capacity ~ lib/drone_cargo.py::DroneCargoMixin.cargo_full  # safe call boilerplate, different reads
+lib/logistics_requests.py::outpost_deficits ~ lib/logistics_requests.py::outpost_deficits_tiered  # split vs summed output of one tier read
+lib/bio.py::BioExchangeController.__init__ ~ lib/bio.py::BioLabController.__init__  # constructor shape, not logic

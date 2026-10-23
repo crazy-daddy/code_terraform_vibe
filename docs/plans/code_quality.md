@@ -67,7 +67,21 @@ so step 2 is needed.
 | `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
 
 ## Open candidates
-Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. Next: the sweep in [helpers_sweep.md](helpers_sweep.md).
+Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. Ranked `drift-bug` and `merge` families, best first (details and sites in the files; the plan is the TODO box "Helpers: implementation plan for the judged sweep families"):
+1. drift-bug: survey spiral readers raise on a non-dict, `SURVEY_SPIRAL_KEY` defined twice (S).
+2. drift-bug: `vehicle_claims.get_unsupported_targets` and `archive_cleaner._merge_unsupported` disagree on legacy pioneer keys (S).
+3. merge `archive.get_dict` (~25 sites; opens the spiral fix and the survey bypassers).
+4. merge a research unlock helper (12 sites; five sites let a raised lookup escape today, the helper swallows it).
+5. merge `components.outposts()` (~20 sites).
+6. merge `archive.mutate` / `pop_entries` (~30 updaters, risk medium; after 3, in small batches).
+7. merge `swallow.safe_call` (6 defs, ~30 call sites).
+8. merge `cash.shop_prices` / `shop_price` (8 sites).
+9. merge `components.building_ids_at` (6 sites).
+10. merge keyed-state wrappers and sub-entry lookups on `archive.mutate` / `dict_entry` (9 sites).
+11. merge `components.outpost_by_id` (3), `components_at` (2), `sensor_value` (3).
+12. merge `geometry.dist` (3 defs, 21 calls) and `game_clock.now_tick` (4 defs).
+13. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
+14. merge the small S families (`item_tiers.best_tier`, pickup ledger totals, `parking_client.is_shedded`, `priority.ladder_totals`, `field_layout.rc_to_sector`, lazy fail dicts, `_raise_target`, building type counts and more) and the remaining singles (ranks 14 and 15 of the candidates file).
 - Guarded raw `notify()` calls (`try: notify(...) except: swallowed`): `bio.py` (2), `charging.py`, `drone_service.py`, `harvesting.py`, `seed_maker.py`, `thermal_cap.py`, `vehicle_cargo.py`, `vehicle_charging.py`, `vehicle_claims.py` (all `scripts/4_controlpanel/lib`). `notify()` only raises on bad arguments, so the guards hide our own bugs; same rationale as the dropped wrappers.
 
 ## Drifted copies (sweep 2026-10-11)
@@ -141,29 +155,14 @@ Rod yield must end above the first shedding line.
   `TickCache`.
 
 ## Next sweep
-Rerun the harvest after the open candidates land, with the families above marked done, so agents don't report
-them again. Families not swept yet: archive read/validate wrappers (`archive.get(KEY)` + `isinstance(dict)`,
-~96 sites), per-outpost building filters that bypass `discover_storage_buildings` / `discover_network_buildings`.
+Ran 2026-10-23: four harvest angles (scan pairs now including `autoplay/` and short functions, game API anchors, bypassed discovery, known families refresh), merged and judged in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md). Plan: [helpers_sweep.md](helpers_sweep.md). The families that earlier notes listed here (archive read/validate wrappers, per-outpost building filters, `research.is_unlocked`, `_dist`, the recipe BFS) are all judged there. Before another harvest, land the ranked families above and list them as done in the harvester briefs.
 
-A spot check (2026-10-09) found more candidates the first sweep missed:
-- **Guarded `research.is_unlocked` reads**: 5 identical wrappers (`early_buyer.is_unlocked`,
-  `storage.warehouses_unlocked`, `pioneer_upgrade.sport_nav_unlocked`, `drone_weather.hot_cargo_unlocked`,
-  `building_swap_upgrade._large_unlocked`) plus ~4 inline in `vehicle_claims`, `survey_requests`, `pioneer_upgrade`.
-  `clone_scan` clusters them with `biomass_mixer_gate._is_powered` and `drone_weather.now_gh`: the general
-  family is a guarded component call with a default.
-- **`_dist(ax, ay, bx, by)` in autoplay**: `outpost_plan`, `outpost_sites`, `outpost_needs`, plus 3 inline in
-  `outpost_sites`. Missed by the `geometry.distance` pass.
-- **Recipe shortfall cascades** in `production_cascade`: `_cascade_fabricator_output_demand`,
-  `get_manual_order_blocking_items` and `_walk_blueprint_demand` run the same depth-6 BFS and differ only in
-  what each node records. One walker with a per-node callback.
-
-No full strong-model sweep: the cheap tools already point at these. Before the next harvest:
-- `clone_scan.py` skips `autoplay/` and functions under 6 lines. Add both, then triage its unreviewed pairs
-  (325 at 0.85), not just the top of the list.
-- Anchor the Haiku brief on game API calls: list every caller of `research.is_unlocked`, `notify`,
-  `real_seconds_per_hour`, `archive.get`, `deploy`/`undeploy`. Wrapper copies cluster around them.
-- Keep the strong model for the judge step. A targeted read of `autoplay/lib` plus `production_cascade`
-  is the one place a strong-model harvest may pay off (logic-shaped duplicates, fastest-growing code).
+Still unswept (the "Harvest gaps" of the candidates file):
+- `clone_scan` clusters c32 (~90 one-line accessors) and c72 were checked only for the listed families; stub bodies (`NotImplementedError`, default hooks) were skipped.
+- `archive.get` shape counts are regex estimates (31 multi-line calls unparsed); re-count with an AST pass when the `get_dict` swap lands.
+- Generic `get_component` sites (hundreds) stay unenumerated; the target is one typed accessor per kind in `components.py`, outside the judged families.
+- Whether `fluid_routing.discover_network_buildings` is pure under wildlife `run_atomic` is unverified (blocks nothing; left on its current callers).
+- `free_elsewhere` as `sum_tiers(free_elsewhere_tiers(...))` needs `outpost_free_tiers`' need-only split to equal the band sum (unverified, kept apart).
 
 ## Size scan triage (2026-10-22)
 Status: **done** (Order 1-6); open follow-ups below.
