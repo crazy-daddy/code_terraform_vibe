@@ -320,15 +320,15 @@ class EarlyBuyer:
         deployed = 0
         power = component("power_control")
         for _ in range(count):
-            res = computer.deploy(item_id)
-            if res.status != "ok":
-                log.print(f"[early_buyer] Deploy {item_id} -> {res.status}: {res.message}")
+            new_id, status, message = building_ops.deploy_new(item_id, None, computer=computer)  # None = home
+            if new_id is None:
+                log.print(f"[early_buyer] Deploy {item_id} -> {status}: {message}")
                 break
             deployed += 1
-            log.print(f"[early_buyer] Deployed {item_id} -> {res.machine_id}")
+            log.print(f"[early_buyer] Deployed {item_id} -> {new_id}")
             if power and not mobile:
                 try:
-                    power.set_powered(res.machine_id, True)
+                    power.set_powered(new_id, True)
                 except Exception as error:
                     swallowed("early_buyer.EarlyBuyer.buy_and_deploy: power.set_powered", error)
         return deployed > 0

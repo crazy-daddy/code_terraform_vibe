@@ -63,25 +63,11 @@ so step 2 is needed.
 | `logistics_requests.min_load_units()` | drone 50 vs ground 10 minimum haul load (now 10 for both, owner) | this branch |
 | `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
+| `notify()` called directly (2026-10-23) | 4 guarded `_notify` copies (`reactor`, `oil_generator`, `power`, `power_solar`) and the guards around raw `notify()` calls | this branch |
+| `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
 
 ## Open candidates
-Plans (2026-10-23): the first two bullets in [notify_building_ops.md](notify_building_ops.md) (the `_notify`
-guard goes: `notify()` raises only on bad arguments), the next sweep in [helpers_sweep.md](helpers_sweep.md).
-
-- **`_notify(text, level, duration)`**: 4 identical copies (`reactor`, `oil_generator`, `power`, `power_solar`),
-  each `notify()` in a swallowed try. About 10 raw `notify()` calls elsewhere have no guard (`bio`, `charging`,
-  `drone_service`, `harvesting`, `fluid_routing`). One guarded helper, maybe next to `swallowed`.
-- **Deploy / undeploy / upgrade sequences onto `building_ops`**: `pillar_swap.py` and `building_swap_upgrade.py`
-  each run their own undeploy, sell, buy, deploy and upgrade steps with restart adoption (`known` snapshot) and
-  refusal retries. `building_ops.py` (autoplay.md §11k) is the shared executor for exactly that: one status
-  table, snapshot-then-deploy adoption, retire handshake. Also `early_buyer`, `fleet_upgrade`, `fleet_commission`,
-  `tank_upgrade` and `fleet_decommission` call `computer.deploy()`/`undeploy()` directly. They don't touch the
-  same machine today, so this is cleanup, not a fix. Move one at a time; keep each module's own sell/buy policy
-  and request a `building_ops` job for the machine steps.
-  Partly done (2026-10-22): the swaps and fleet coordinators call `building_ops.deploy_new()` / `undeploy()` /
-  `classify()`, not jobs. Jobs are stepped only by the autoplay planner; a swap waiting on it would lose its
-  back-to-back buy, deploy, drain. Left on raw calls: `early_buyer`, `fleet_decommission`, `fleet_upgrade`
-  undeploy and Depot upgrade, `storage_expand`.
+Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. Next: the sweep in [helpers_sweep.md](helpers_sweep.md).
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,

@@ -126,6 +126,18 @@ class EarlyBuyerTests(StubTestCase):
         self.assertEqual([line for line in printed if "Upgrade" in line], [])
         self.assertEqual(self.tiers("pressure_generator").count(2), 0)
 
+    def test_deploy_that_raises_stops_the_loop_and_powers_nothing(self):
+        w = self.world
+        power = mock.Mock()
+        w.services["power_control"] = power
+        with mock.patch.object(w.computer, "deploy", side_effect=RuntimeError("boom")) as deploy:
+            deployed = self.buyer.buy_and_deploy(
+                w.services["outpost_home"], w.computer, w.services["shop"], "temp_heater", 3
+            )
+        self.assertFalse(deployed)
+        deploy.assert_called_once()  # the first failure ends the loop
+        power.set_powered.assert_not_called()
+
     def test_undeploy_that_raises_removes_and_sells_nothing(self):
         w = self.world
         self.pillars.update(o2=2.5, heat=5.0)
