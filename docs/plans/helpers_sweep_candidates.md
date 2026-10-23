@@ -33,13 +33,14 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Rule: resolve the research component, guard it, call `research.is_unlocked(id)`, `bool()` it; a missing or raising component logs `swallowed` and reads as not unlocked. Two copies add "or one sits in inventory" (`inventory_count(type) > 0`).
 - Differences: `s0/power/solar.py:29` binds `research = get_component("research")` once at import; all other copies resolve per call. Lookup spelling varies: `component("research")` (early_buyer, storage_expand, site_supply, game_phase), `get_component` (drone_*, pioneer_upgrade, survey_requests, vehicle_claims), `components.component` (storage x2), `self._component` (building_swap_upgrade). Guard varies: `not research`, `is None`, `hasattr(research, "is_unlocked")`. Exception result varies: False, fall to inventory, skip id, try id variants (solar:98), whole read None (game_phase:273).
 - Found by: A, B, D
-- Verdict: **merge**, plus one **drift-bug**.
+- Verdict: **merge**, plus one tier-0 cleanup (not a drift-bug, see below).
   - Owner `L/components.py`: `research_unlocked(research_id, where="components.research_unlocked") -> bool` and `all_research_unlocked(research_ids, where=...) -> bool` (`all()` over the first; False on an empty list is fine for both callers).
   - Rule: per-call `component("research")`; `bool(research.is_unlocked(id))`; a missing component or a raised call is `swallowed(where)` and reads False. No `hasattr` guard and no id variants: docs/components/research.md says `is_unlocked` returns False for a locked or unknown id, so a `get_component` result either has the method or is None. `not research` and `is None` are the same test (get_component returns a component or None, docs/guide/builtins_and_commands.md).
   - Sites merged (12): early_buyer.is_unlocked (becomes the helper or a one-line alias for its 4 internal callers), heli_unlocked, _exotic_research_done (all_), hot_cargo_unlocked, sport_nav_unlocked, _seismic_wanted :171-177 (all_), inventory_stack_size, warehouses_unlocked, _stock_table :386-395 (one call per gated item; the lazy resolve goes), _large_unlocked and storage_expand._unlocked (`research_unlocked(rid) or inventory_count(type_id) > 0`; two sites, no `unlocked_or_held` helper), can_attempt_target :512-518 (`research_unlocked(res_id)` per id inside the loop).
   - Apart: `survey_requests.unlocked_scan_research` and `vehicle_claims.scan_research_snapshot` return lists and keep going past a raising id (a blacklist entry needs the partial list); `game_phase.read_research` is set-valued via `research.unlocked()` with None meaning "keep the last snapshot"; `s0/power/solar.py` cannot import tier 4.
-  - Drift-bug: `s0/power/solar.py:29` resolves `research` once at import without `need()`, so when the component is absent at cold boot (the Research Computer unlocks later, see solar.py:215) every `is_tech_unlocked` gate at :151 stays False until the script restarts. Right copy: every tier-4 copy (resolve per call). Fix in place: resolve inside `is_tech_unlocked`; the id-variant loop at :98 is dead weight per research.md (unknown id reads False, no print) and can go with it. Medium confidence, low effort.
-  - Risk: low. Size: M (12 sites, 2 helpers, 1 tier-0 fix).
+  - Behavior change (safer): `drone_depots.py:85`, `drone_scout.py:25`, `drone_weather.py:132`, `pioneer_upgrade.py:78` and `:171` call `get_component("research")` outside their `try`, so a raised lookup escapes today; through `components.component` it is swallowed and reads "not unlocked". The storage, early_buyer, site_supply, game_phase, building_swap and storage_expand copies already go through `component()`; the merge aligns the rest with them, it is not the same behavior at those five sites.
+  - Tier-0 cleanup, not a bug: `s0/power/solar.py:29` binds `research` at import, but docs/components/research.md says the component is "Available from the beginning" and `get_component` returns None only for an id no entity has (docs/guide/builtins_and_commands.md:113), so the bind never misses (the `research_computer` gate at :247 is the Ship Computer building, a different thing). What remains: the id-variant loop at :98-106 probes non-public ids that research.md says read False (dead weight), and the import-time bind is style. Nit, low risk, S, no owner change (tier 0).
+  - Risk: low. Size: M (12 sites, 2 helpers).
 
 ## Depot walks (DEPOT_TYPE_TIERS: drone_station, drone_station_medium, drone_station_large)
 - Sites:
@@ -167,7 +168,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge**.
   - Owner `L/archive.py`: `ArchiveClient.get_dict(key) -> dict` (`value = self.get(key, {}); return value if isinstance(value, dict) else {}`). Same contract as `get_entry` (:123) already has for one level.
   - Rule: a dict-valued key reads `{}` when missing, None or not a dict; `get()` already swallows notebook errors, so no outer `try`.
-  - Sites merged: the 20 A def-level wrappers keep their names (they document the key and are imported) and become `return archive.get_dict(KEY)`; the three try-guarded ones drop the `try` (see "try around archive.get"); the S1/S2 line-level sites and the three `ap/` wrappers switch as they are touched (`or {}` goes). Related: `is_flagged`, `is_sport_nav_requested`, the three PICKUPS readers, `vehicle_claims` :342/:444-446, `storage_take.py:60`.
+  - Sites merged: the 20 A def-level wrappers keep their names (they document the key and are imported) and become `return archive.get_dict(KEY)`; the three try-guarded ones drop the `try` (see "try around archive.get"); the S1/S2 line-level sites and the three `ap/` wrappers switch as they are touched (`or {}` goes). Related: `is_flagged`, `is_sport_nav_requested`, the three PICKUPS readers, `vehicle_claims` :342/:444-446, `storage_take.py:60`. Two sites are not one-line swaps: `seed_maker._refresh_tried` :187 assigns `self._tried` (becomes `self._tried = archive.get_dict(TRIED_KEY)`), and `logistics_requests.pickups_snapshot` :357 returns `dict(raw)`, a shallow copy its caller may mutate while planning; it keeps the copy (`dict(archive.get_dict(PICKUPS_KEY))`), `get_dict` returns the stored object as `get` does.
   - Apart: `pillar_swap.swap_state` (None means "no swap state", its callers test it); `logistics_snapshot._entry` (an in-memory dict); `plant_terraformer._was_running`/`_last_batch_km2` (nested entry: `archive.get_entry(STATUS_KEY, self.name)` plus isinstance); `construction_lots`, `fluid_routing.get_tank_assignments`, `production_orders.get_manual_orders`, `survey_requests.read_*` (a cleaner validates values; the `archive.has` seed stays). `archive_cleaner` keeps `_reset_if_not_dict` (write side).
   - Risk: low (pure read, same result on every input). Size: L by count (~25 files), mechanical.
 
@@ -428,19 +429,19 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 ## Ranking
 Drift-bugs first, then merges by sites saved over risk; `keep` families are not listed. Part 2 families are marked (2).
 
-1. drift-bug `s0/power/solar.py` research bound at import (research family): every tech gate dead after a cold boot without the component; S.
-2. drift-bug survey spiral readers raise on a non-dict (spiral family) plus the twice-defined `SURVEY_SPIRAL_KEY`; S.
-3. drift-bug (2) unsupported-target legacy merge: `vehicle_claims.get_unsupported_targets` and `archive_cleaner._merge_unsupported` disagree on legacy pioneer keys; S.
-4. merge `archive.get_dict` (~25 sites, risk low, mechanical; opens the spiral fix and the survey bypassers).
-5. merge research unlock helper (12 sites, risk low).
-6. merge `components.outposts()` (~20 sites, risk low).
-7. merge `archive.mutate` / `pop_entries` (~30 updaters, risk medium): do it after 4 and in small batches.
-8. merge `swallow.safe_call` (6 defs, ~30 call sites, risk low).
-9. merge `cash.shop_prices` / `shop_price` (8 sites, risk low).
-10. merge `components.building_ids_at` (6 sites, risk low).
-11. merge keyed-state wrappers and sub-entry lookups on `archive.mutate` / `dict_entry` (9 sites, risk low).
-12. merge `components.outpost_by_id` (3 sites) and `components_at` (2 sites) and `sensor_value` (3 sites), risk low.
-13. merge `geometry.dist` (3 defs, 21 call sites) and `game_clock.now_tick` (4 defs), risk low.
-14. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
-15. merge (2) small families marked merge: `item_tiers.best_tier` (4), pickup ledger totals (3), `parking_client.is_shedded` (4), `priority.ladder_totals` (2), `field_layout.rc_to_sector` (1 + 3 constants), `geometry.ceil_int` (1), `next_sleep` (1), `_category_ladder` (1), `wildlife_complete` (1), lazy fail dicts (2), `_raise_target` (4), cleaner fleet prune (1), building type counts (3); all S, risk low.
-16. merge the remaining S singles: `cash.balance` in building_swap_upgrade, `components.component(where)`, charging `all_stations`, `coords_of`, water tanks, `network_habitats`, sport-nav flags, `publish_status` for wants, `CASCADE_MAX_DEPTH`, `dock_order_prios` pair.
+1. drift-bug survey spiral readers raise on a non-dict (spiral family) plus the twice-defined `SURVEY_SPIRAL_KEY`; S.
+2. drift-bug (2) unsupported-target legacy merge: `vehicle_claims.get_unsupported_targets` and `archive_cleaner._merge_unsupported` disagree on legacy pioneer keys; S.
+3. merge `archive.get_dict` (~25 sites, risk low, mechanical; opens the spiral fix and the survey bypassers).
+4. merge research unlock helper (12 sites, risk low; swallows a raised lookup at five sites that let it escape today).
+5. merge `components.outposts()` (~20 sites, risk low).
+6. merge `archive.mutate` / `pop_entries` (~30 updaters, risk medium): do it after 3 and in small batches.
+7. merge `swallow.safe_call` (6 defs, ~30 call sites, risk low).
+8. merge `cash.shop_prices` / `shop_price` (8 sites, risk low).
+9. merge `components.building_ids_at` (6 sites, risk low).
+10. merge keyed-state wrappers and sub-entry lookups on `archive.mutate` / `dict_entry` (9 sites, risk low).
+11. merge `components.outpost_by_id` (3 sites) and `components_at` (2 sites) and `sensor_value` (3 sites), risk low.
+12. merge `geometry.dist` (3 defs, 21 call sites) and `game_clock.now_tick` (4 defs), risk low.
+13. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
+14. merge (2) small families marked merge: `item_tiers.best_tier` (4), pickup ledger totals (3), `parking_client.is_shedded` (4), `priority.ladder_totals` (2), `field_layout.rc_to_sector` (1 + 3 constants), `geometry.ceil_int` (1), `next_sleep` (1), `_category_ladder` (1), `wildlife_complete` (1), lazy fail dicts (2), `_raise_target` (4), cleaner fleet prune (1), building type counts (3); all S, risk low.
+15. merge the remaining S singles: `cash.balance` in building_swap_upgrade, `components.component(where)`, charging `all_stations`, `coords_of`, water tanks, `network_habitats`, sport-nav flags, `publish_status` for wants, `CASCADE_MAX_DEPTH`, `dock_order_prios` pair.
+16. nit `s0/power/solar.py` `is_tech_unlocked`: drop the id-variant loop (:98-106) and the import-time bind; tier 0, no helper.
