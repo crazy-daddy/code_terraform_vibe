@@ -57,3 +57,31 @@ automation/orchestrator_automation.py::buy_early_if_due ~ automation/orchestrato
 lib/drone_cargo.py::DroneCargoMixin.cargo_capacity ~ lib/drone_cargo.py::DroneCargoMixin.cargo_full  # safe call boilerplate, different reads
 lib/logistics_requests.py::outpost_deficits ~ lib/logistics_requests.py::outpost_deficits_tiered  # split vs summed output of one tier read
 lib/bio.py::BioExchangeController.__init__ ~ lib/bio.py::BioLabController.__init__  # constructor shape, not logic
+lib/bio_processor.py::BioProcessorController._idle ~ lib/bio.py::BioLabController._pause  # two-line glue; a sleep_flushed helper saves nothing
+lib/lead_cask.py::_live_inbound ~ lib/fluid_routing.py::_prune_conflicts  # TTLs and keys differ
+lib/building_ops.py::retire_requested ~ lib/fleet_decommission.py::is_decommission_requested  # two-line requested-state tests over different keys
+lib/site_evict.py::fab_sites ~ lib/site_evict.py::lab_sites  # already one-liners on discover_*
+lib/drone_claims.py::set_drone_recalled ~ lib/vehicle_claims.py::set_vehicle_recalled  # glue over set_flagged; the key is the difference
+lib/habitat.py::HabitatController._discover.discover ~ lib/refiner.py::RefinerController.routers.discover  # three-line closures over shared helpers; the type tables differ
+lib/fleet_intent.py::_add ~ lib/production_core.py::_add_demand  # the one-line keyed-sum idiom; a helper adds a call per item in step-capped loops
+lib/drones_card.py::drone_id_of ~ lib/vehicles_card.py::vehicle_id_of  # one-liners; the default differs
+lib/feed_maker.py::FeedMakerController.has_inputs ~ lib/fuel_assembler.py::FuelAssemblerController.can_stage  # dict vs live stockpile()/available()
+lib/drone.py::DroneController.current_target ~ lib/vehicle.py::VehicleController.current_target  # read-only property shims on two hosts, by design
+lib/drone.py::DroneController.current_target_key ~ lib/vehicle.py::VehicleController.current_target_key  # read-only property shims on two hosts, by design
+lib/drone_claims.py::DroneClaimsMixin.adopt_mission ~ lib/vehicle_claims.py::VehicleClaimsMixin.adopt_mission  # one assignment each; the mission writer stays per fleet kind
+lib/drone_charging.py::DroneChargingMixin.docked_at_service ~ lib/drone_upgrade.py::DroneUpgradeMixin._docked_at_depot  # services vs depots list, two lines
+lib/fleet_decommission.py::FleetDecommissionCoordinator.__init__ ~ lib/fleet_upgrade.py::FleetUpgradeCoordinator.__init__  # two assignments
+lib/outpost_mining.py::_archive ~ lib/outpost_reagents.py::_archive  # lazy-import cycle breakers
+automation/builder_automation.py::report_error ~ automation/orchestrator_automation.py::report_error  # differ by tag and card; automations do not import each other
+lib/production_demand_record.py::depths_entry ~ lib/production_demand_record.py::blueprint_entry  # key name only, two lines
+lib/drone_commission.py::drone_craft_parts ~ lib/drone_commission.py::drone_buy_parts  # complementary halves of one split
+autoplay/lib/infra_topology.py::walls ~ autoplay/lib/infra_topology.py::held  # complementary partitions of one layer by fluid label
+lib/oil_generator.py::OilGeneratorController.ensure_input_connection ~ lib/steam_turbine.py::SteamTurbineController.ensure_input_connection  # glue over ensure_input_logged; messages and starved source differ
+lib/steam_condenser.py::SteamCondenserController.ensure_steam_input ~ lib/oil_generator.py::OilGeneratorController.ensure_input_connection  # same glue, different messages
+lib/role_demand.py::refresh_slot ~ lib/role_demand.py::release_slot  # refresh vs release on one claim key; already on the common claim helpers
+lib/vehicle_claims.py::VehicleClaimsMixin.refresh_claim ~ lib/drone_claims.py::DroneClaimsMixin.refresh_biosite_claim  # glue over common.refresh_claim; keys differ
+lib/job_mine.py::MineJob.__init__ ~ lib/job_survey.py::SurveyJob.__init__  # different fields
+lib/bio_coastal.py::BioLuminizerController.__init__ ~ lib/bio_geothermal.py::DnaSequencerController.__init__  # per-machine cache-once init, different fields
+lib/feed_maker.py::FeedMakerController.recipes ~ lib/refiner.py::RefinerController.unlocked_recipes  # both already TickCache glue
+lib/construction_plan.py::at_priority ~ lib/construction_plan.py::ids_needing  # one list filter per field
+lib/bio_retire.py::biome_retired ~ lib/lead_cask.py::network_cask_stock  # any vs sum over the same outpost walk
