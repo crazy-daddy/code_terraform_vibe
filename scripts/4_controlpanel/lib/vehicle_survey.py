@@ -24,6 +24,12 @@ SURVEY_SPIRAL_KEY = "survey.spiral"
 LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
 
+def spiral_next_index(default=0):
+    """Next unscanned spiral waypoint index (SURVEY_SPIRAL_KEY "next_index");
+    default when missing or the stored progress is not a dict."""
+    return archive.get_dict(SURVEY_SPIRAL_KEY).get("next_index", default)
+
+
 class VehicleSurveyMixin:
     """
     Sonar field operations, mixed into VehicleController; SurveyJob
@@ -363,7 +369,7 @@ class VehicleSurveyMixin:
             )
 
         def update_progress(current):
-            progress = dict(current or {})
+            progress = dict(current) if isinstance(current, dict) else {}
             waypoints = list(progress.get("waypoints", []))
             entry = {
                 "index": point_index,

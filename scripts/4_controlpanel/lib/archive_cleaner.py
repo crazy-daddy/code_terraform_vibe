@@ -14,6 +14,7 @@ from outpost_mining import MINING_REACH_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
 from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_coords
+from vehicle_survey import LEGACY_PIONEER_SPIRAL_KEY, SURVEY_SPIRAL_KEY
 
 # lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
 # debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
@@ -26,10 +27,8 @@ from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORT
 # stops profiling itself.
 PROFILING_STALE_TICKS = 6000
 
-# Canonical & Legacy Archive Keys (claim and blacklist keys: imported from
-# their owners above)
-SURVEY_SPIRAL_KEY = "survey.spiral"
-LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
+# Canonical & Legacy Archive Keys (claim, blacklist and spiral keys: imported
+# from their owners above)
 
 # Old one-key-per-vehicle recall flag (lib/vehicle_claims.py's now-retired
 # vehicle_recall_key()), superseded by the single consolidated RECALL_KEY dict.

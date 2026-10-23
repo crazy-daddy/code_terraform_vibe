@@ -7,7 +7,7 @@ from archive import archive
 from job_survey import ROUTE_KIND, SurveyJob
 from mission import Mission
 from tree_console import TreeConsole
-from vehicle_survey import SURVEY_SPIRAL_KEY, VehicleSurveyMixin
+from vehicle_survey import SURVEY_SPIRAL_KEY, VehicleSurveyMixin, spiral_next_index
 
 
 class _Sonar:
@@ -120,6 +120,27 @@ class SurveyJobPickTests(harness.StubTestCase):
         self.assertIsNone(job.pick())
         self.assertEqual(job.step(), 30.0)
         self.assertEqual(host.calls, ["recharge", "IDLE_SURVEY_COMPLETE"])  # 90% at base: top-off first
+
+    def test_spiral_mission_non_dict_progress_starts_at_zero(self):
+        archive.set(SURVEY_SPIRAL_KEY, [1])  # malformed: the cleaner resets it, readers start over
+        mission = SurveyJob(_Host(), spiral_fallback=True).pick()
+        assert mission is not None
+        self.assertEqual(mission.target["index"], 0)
+
+
+class SpiralProgressTests(harness.StubTestCase):
+    def test_spiral_next_index_reads_stored_and_default(self):
+        archive.set(SURVEY_SPIRAL_KEY, {"next_index": 4})
+        self.assertEqual(spiral_next_index(), 4)
+        archive.set(SURVEY_SPIRAL_KEY, [1])
+        self.assertEqual(spiral_next_index(7), 7)
+
+    def test_update_progress_replaces_non_dict(self):
+        archive.set(SURVEY_SPIRAL_KEY, [1])
+        _Host().save_survey_waypoint(0, (30.0, 0.0), [])
+        progress = archive.get(SURVEY_SPIRAL_KEY)
+        self.assertEqual(progress["next_index"], 1)
+        self.assertEqual([waypoint["coords"] for waypoint in progress["waypoints"]], [[30.0, 0.0]])
 
 
 class SurveyJobExecuteTests(harness.StubTestCase):
