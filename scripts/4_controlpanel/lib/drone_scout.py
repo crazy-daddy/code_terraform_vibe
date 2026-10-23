@@ -10,6 +10,7 @@
 from typing import TYPE_CHECKING
 
 from archive import archive
+from components import all_research_unlocked
 from contact_inference import SURVEY_RESEARCH, entry_reason, inferred_kind
 from survey_requests import read_requests, read_unsupported, request_at, requested_first
 from swallow import swallowed
@@ -22,14 +23,7 @@ if TYPE_CHECKING:
 
 def _exotic_research_done():
     """True once every exotic classification research is unlocked (live research state)."""
-    research = get_component("research")
-    if not research:
-        return False
-    try:
-        return all(research.is_unlocked(rid) for rid in SURVEY_RESEARCH["exotic"])
-    except Exception as error:
-        swallowed("drone_scout._exotic_research_done: research.is_unlocked", error)
-        return False
+    return all_research_unlocked(SURVEY_RESEARCH["exotic"], "drone_scout._exotic_research_done")
 
 
 def locked_exotic_coords(nocturna):

@@ -144,6 +144,24 @@ def home_outpost_id():
     return getattr(home_outpost(), "id", None)
 
 
+def research_unlocked(research_id, where="components.research_unlocked"):
+    """research.is_unlocked(research_id); False when the component is missing
+    or the call raises (swallowed under `where`)."""
+    research = component("research")
+    if research is None:
+        return False
+    try:
+        return bool(research.is_unlocked(research_id))
+    except Exception as error:
+        swallowed(where, error)
+        return False
+
+
+def all_research_unlocked(research_ids, where="components.all_research_unlocked"):
+    """True when every id in research_ids is unlocked; False for an empty list."""
+    return bool(research_ids) and all(research_unlocked(research_id, where) for research_id in research_ids)
+
+
 def machine_tier(machine_id):
     """Installed Mk tier of a deployed machine, 1 when unreadable."""
     machine = component(machine_id)

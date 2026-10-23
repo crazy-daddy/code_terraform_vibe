@@ -42,7 +42,7 @@
 import building_ops
 import fleet_commission
 from archive import archive
-from components import component, machine_tier
+from components import component, machine_tier, research_unlocked
 from game_clock import now_tick
 from machine_controller import port_counts
 from priority import BUILD
@@ -91,17 +91,6 @@ def active_stage(pillars):
             if pillars[key] < target:
                 return i
     return len(STAGES) - 1
-
-
-def is_unlocked(research_id):
-    research = component("research")
-    if not research:
-        return False
-    try:
-        return bool(research.is_unlocked(research_id))
-    except Exception as error:
-        swallowed("early_buyer.is_unlocked: research.is_unlocked", error)
-        return False
 
 
 def _types(type_id):
@@ -190,7 +179,7 @@ class EarlyBuyer:
         if config.get("done"):
             self.summary = "early buyer done"
             return self.summary
-        if is_unlocked(DONE_RESEARCH):
+        if research_unlocked(DONE_RESEARCH):
             archive.set(STATE_KEY, {"done": True})
             log.print("[early_buyer] Control Room researched: build order handed over.")
             self.summary = "early buyer done"
@@ -233,7 +222,7 @@ class EarlyBuyer:
             log.print(f"[early_buyer] stage {stage}: {filler} | P {pillars['pressure']:.3f} kPa | O2 {pillars['o2']:.3f} ppt | Heat {pillars['heat']:.1f} HU | TP {int(pillars['tp']):,}")
 
         wanted_rovers = int(config.get("rovers", ROVERS))
-        rovers_ready = wanted_rovers > 0 and is_unlocked("research_rover") and is_unlocked("research_deep_extraction")
+        rovers_ready = wanted_rovers > 0 and research_unlocked("research_rover") and research_unlocked("research_deep_extraction")
         due = None
         if config.get("pioneer", True) and pillars["tp"] >= PIONEER_TP:
             due = self.pioneer_due(shop, int(config.get("scouts", SCOUTS)), int(config.get("constructors", CONSTRUCTORS)))
@@ -275,7 +264,7 @@ class EarlyBuyer:
             self.buy_and_deploy(home, computer, shop, type_id, short)
 
         # Charging Station: home of the Rovers and the Pioneer, bought with whichever comes first.
-        if not building_ids(home, "charging_station") and station_wanted and is_unlocked("research_charging_station"):
+        if not building_ids(home, "charging_station") and station_wanted and research_unlocked("research_charging_station"):
             if free_base_slots(home) < 1:
                 self.undeploy_and_sell(home, computer, shop, filler, len(building_ids(home, filler)) - 1)
             log.print("[early_buyer] Deploying Vehicle Charging Station.")
@@ -334,7 +323,7 @@ class EarlyBuyer:
 
     def apply_mk2_packs(self, home, computer, shop):
         """Raises every Pressure Generator to Mk II, buying one pack at a time."""
-        if not is_unlocked(MK2_RESEARCH):
+        if not research_unlocked(MK2_RESEARCH):
             return
         for b_id in building_ids(home, "pressure_generator"):
             if machine_tier(b_id) >= MK2_TIER:

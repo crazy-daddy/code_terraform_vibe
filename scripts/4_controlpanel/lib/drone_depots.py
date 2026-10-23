@@ -9,7 +9,7 @@
 
 import geometry
 from archive import archive
-from components import drone_service_station
+from components import drone_service_station, research_unlocked
 from game_clock import TickCache
 from item_tiers import DEPOT_TYPE_TIERS
 from swallow import swallowed
@@ -82,14 +82,7 @@ HELI_RESEARCH_ID = "research_heli_drones"
 
 def heli_unlocked():
     """True once Heli-Drones is researched: heli modules can be coupled (False when unreadable)."""
-    research = get_component("research")
-    if not research:
-        return False
-    try:
-        return bool(research.is_unlocked(HELI_RESEARCH_ID))
-    except Exception as error:
-        swallowed("drone_depots.heli_unlocked: research.is_unlocked", error)
-        return False
+    return research_unlocked(HELI_RESEARCH_ID, "drone_depots.heli_unlocked")
 
 
 def heli_oil_ready():

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import fleet_claims_common as common
 import mining_reservations
 from archive import archive
+from components import research_unlocked
 from contact_inference import RESEARCH_NAMES
 from fleet_claims_common import LEGACY_ROVER_CLAIMS_KEY, SURVEY_CLAIMS_KEY
 from item_tiers import DRILL_TIERS, MIN_SONAR_RANGE_M, SONAR_TIERS, best_mounted, short_name, tier_rank
@@ -495,16 +496,10 @@ class VehicleClaimsMixin:
 
         # Research requirement: ONLY rescan when scanning-relevant research is unlocked
         if reason == "research_required":
-            research = get_component("research")
-            if research:
-                recorded_scan_researches = set(unsupported_entry.get("unlocked_scan_researches", []))
-                for res_id in SCAN_RESEARCH_IDS:
-                    if res_id not in recorded_scan_researches:
-                        try:
-                            if hasattr(research, "is_unlocked") and research.is_unlocked(res_id):
-                                return True, f"new_scan_research_{res_id}"
-                        except Exception as error:
-                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: research.is_unlocked", error)
+            recorded_scan_researches = set(unsupported_entry.get("unlocked_scan_researches", []))
+            for res_id in SCAN_RESEARCH_IDS:
+                if res_id not in recorded_scan_researches and research_unlocked(res_id, "vehicle_claims.VehicleClaimsMixin.can_attempt_target"):
+                    return True, f"new_scan_research_{res_id}"
             return False, "scan_research_still_locked"
 
         return False, f"unsupported_{reason}"

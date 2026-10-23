@@ -19,7 +19,7 @@
 
 import building_ops
 import cash
-from components import component
+from components import component, research_unlocked
 from drone_upgrade import fleet_upgrade_state
 from game_clock import now_tick
 from site_evict import storage_outposts
@@ -67,13 +67,7 @@ class StorageExpander:
             return []
 
     def _unlocked(self, type_id, research_id):
-        research = component("research")
-        try:
-            if research and research.is_unlocked(research_id):
-                return True
-        except Exception as error:
-            swallowed("storage_expand._unlocked: research.is_unlocked", error)
-        return inventory_count(type_id) > 0
+        return research_unlocked(research_id, "storage_expand._unlocked") or inventory_count(type_id) > 0
 
     def _price(self, type_id, fallback):
         shop = component("shop")

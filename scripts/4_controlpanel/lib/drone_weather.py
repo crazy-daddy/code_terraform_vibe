@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 import fleet_intent
 import lead_cask
 from archive import archive
+from components import research_unlocked
 from game_clock import is_fresh, now_hours
 from mission import Mission
 from swallow import swallowed
@@ -127,14 +128,7 @@ def record_collection(event_id, units, exhausted):
 
 
 def hot_cargo_unlocked():
-    research = get_component("research")
-    if research is None:
-        return False
-    try:
-        return bool(research.is_unlocked(HOT_CARGO_RESEARCH))
-    except Exception as error:
-        swallowed("drone_weather.hot_cargo_unlocked: research.is_unlocked", error)
-        return False
+    return research_unlocked(HOT_CARGO_RESEARCH, "drone_weather.hot_cargo_unlocked")
 
 
 def cask_room(outpost: "OutpostRef | None", item_id="raw_uranium"):

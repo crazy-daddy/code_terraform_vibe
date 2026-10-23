@@ -49,7 +49,7 @@ lib/bio_orders.py::focus_local_order  @12/-/-  # priority ladder
 lib/drone_depots.py::resolve_home  @11/-/-  # fallback ladder
 lib/drone_energy.py::DroneEnergyMixin.detect_engine  @11/-/-  # fallback ladder over module reads
 lib/production_demand.py::get_raw_material_reason  @14/13/-  # priority ladder of downstream consumers
-lib/vehicle_claims.py::VehicleClaimsMixin.can_attempt_target  @18/17/-  # flat ladder on unsupported reason
+lib/vehicle_claims.py::VehicleClaimsMixin.can_attempt_target  @15/14/-  # flat ladder on unsupported reason
 lib/fabricator.py::FabricatorController.choose_recipe  @19/17/70  # candidates, hysteresis, join; needs two cuts
 
 # Per-type game-API probing and guards
