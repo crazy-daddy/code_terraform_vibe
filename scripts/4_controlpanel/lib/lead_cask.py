@@ -79,8 +79,7 @@ def _all_outposts():
 
 
 def roles():
-    stored = archive.get(ROLES_KEY, {})
-    return stored if isinstance(stored, dict) else {}
+    return archive.get_dict(ROLES_KEY)
 
 
 def _cask(cask_id) -> "LeadCask | None":

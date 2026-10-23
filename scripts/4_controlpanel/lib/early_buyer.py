@@ -178,8 +178,7 @@ class EarlyBuyer:
         self.summary = "early buyer idle"
 
     def config(self):
-        state = archive.get(STATE_KEY, {})
-        return state if isinstance(state, dict) else {}
+        return archive.get_dict(STATE_KEY)
 
     def step(self, tick=None):
         """One evaluation when due. Returns the summary line."""

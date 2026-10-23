@@ -78,8 +78,7 @@ _VENTS = TickCache(SITES_REFRESH_TICKS)
 
 
 def _read_entries():
-    raw = archive.get(VENT_CYCLES_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(VENT_CYCLES_KEY)
 
 
 def cycle_minutes(vent_id):

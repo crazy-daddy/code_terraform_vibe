@@ -183,8 +183,7 @@ def mark_retire_ready(machine_id):
 
 
 def jobs():
-    raw = archive.get(JOBS_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(JOBS_KEY)
 
 
 def _new_id(cur, kind):

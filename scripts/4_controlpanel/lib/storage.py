@@ -281,8 +281,7 @@ def forget_storage_discovery():
 
 
 def _retiring_entries():
-    raw = archive.get(RETIRING_STORES_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(RETIRING_STORES_KEY)
 
 
 def retiring_store_ids():

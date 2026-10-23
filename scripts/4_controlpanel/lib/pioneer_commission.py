@@ -76,8 +76,7 @@ FIT_POLL_S = 0.5
 
 
 def commission_state():
-    state = archive.get(COMMISSION_KEY, {})
-    return state if isinstance(state, dict) else {}
+    return archive.get_dict(COMMISSION_KEY)
 
 
 def update_commission(mutate):

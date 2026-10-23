@@ -291,8 +291,7 @@ def read(tick=None):
 
 
 def read_claims():
-    claims = archive.get(ROLE_CLAIMS_KEY, {})
-    return claims if isinstance(claims, dict) else {}
+    return archive.get_dict(ROLE_CLAIMS_KEY)
 
 
 def fresh_claims(claims, tick):

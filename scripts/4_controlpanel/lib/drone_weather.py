@@ -90,8 +90,7 @@ def aftermath_target(mission):
 
 
 def aftermath_entries():
-    entries = archive.get(AFTERMATHS_KEY, {})
-    return entries if isinstance(entries, dict) else {}
+    return archive.get_dict(AFTERMATHS_KEY)
 
 
 def open_sites(entries, now, kinds):

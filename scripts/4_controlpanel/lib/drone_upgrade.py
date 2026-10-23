@@ -117,8 +117,7 @@ HOLD_STATES = ("ready", "announced", "swapping")
 
 def fleet_upgrade_state():
     """The whole FLEET_UPGRADE_KEY dict (empty when missing/malformed)."""
-    state = archive.get(FLEET_UPGRADE_KEY, {})
-    return state if isinstance(state, dict) else {}
+    return archive.get_dict(FLEET_UPGRADE_KEY)
 
 
 def update_fleet_upgrade(mutate):

@@ -114,8 +114,7 @@ def shop_price(item_id, fallback=0):
 
 def budget():
     """cash.budget, or {} when missing."""
-    state = archive.get(BUDGET_KEY, {})
-    return state if isinstance(state, dict) else {}
+    return archive.get_dict(BUDGET_KEY)
 
 
 def priority_order(state=None):

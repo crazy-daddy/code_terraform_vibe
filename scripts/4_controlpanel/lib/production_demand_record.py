@@ -49,8 +49,7 @@ MISSING = "missing"
 
 
 def _stored():
-    record = archive.get(DEMAND_KEY, {})
-    return record if isinstance(record, dict) else {}
+    return archive.get_dict(DEMAND_KEY)
 
 
 def record_tick(record=None):
@@ -206,8 +205,7 @@ def demand_signature(dock_plan, kinds=("fabricator", "smelter")):
     from production_sites import SITE_PLAN_KEY
 
     def stored(key):
-        value = archive.get(key, {})
-        return value if isinstance(value, dict) else {}
+        return archive.get_dict(key)
 
     def positive(amount):
         return isinstance(amount, (int, float)) and amount > 0

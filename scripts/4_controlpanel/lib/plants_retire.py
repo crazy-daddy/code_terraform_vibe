@@ -31,8 +31,7 @@ log = TreeConsole(module="plants_retire")
 
 
 def _telemetry():
-    raw = archive.get(STATUS_KEY, {})
-    return raw if isinstance(raw, dict) else {}
+    return archive.get_dict(STATUS_KEY)
 
 
 def plants_complete():

@@ -64,8 +64,7 @@ RETRY_STATUSES = ("inventory_full",)
 
 def decommission_state():
     """The whole {machine_id: entry} dict (empty when missing/malformed)."""
-    state = archive.get(DECOMMISSION_KEY, {})
-    return state if isinstance(state, dict) else {}
+    return archive.get_dict(DECOMMISSION_KEY)
 
 
 def decommission_entry(machine_id):
