@@ -1,5 +1,7 @@
 """lib/machine_pack_upgrade.py: Fabricator-then-Smelter pack ladder, refusal sit-out, Oil Pump install planning."""
 
+from unittest import mock
+
 import machine_pack_upgrade as mpu
 from archive import archive
 from drone_upgrade import update_fleet_upgrade
@@ -49,6 +51,13 @@ class MachinePackUpgradeTests(StubTestCase):
         self.assertIn("smelter", self.upgrader.step(10))
         self.upgrader.step(mpu.REFUSED_RETRY_TICKS + 10)
         self.assertEqual(self.fab.tier(), 2)
+
+    def test_apply_that_raises_waits_without_a_refusal(self):
+        with mock.patch.object(self.world.computer, "upgrade", side_effect=RuntimeError("boom")):
+            self.assertFalse(
+                self.upgrader._apply(self.world.computer, "fabricator_upgrade_pack_mk2", "fabricator_1", 0)
+            )
+        self.assertEqual(self.upgrader._refused(0), {})
 
     def test_switch_off_clears_order(self):
         self.upgrader.step(0)

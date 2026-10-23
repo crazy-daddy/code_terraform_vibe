@@ -107,13 +107,6 @@ class ReactorTests(harness.StubTestCase):
         super().setUp()
         self.clock = Clock(SECONDS_PER_GH)
         self.world.services["clock"] = self.clock
-        self.notified = []
-        self._orig_notify = rx._notify
-        rx._notify = lambda text, **_kw: self.notified.append(text)
-
-    def tearDown(self):
-        rx._notify = self._orig_notify
-        super().tearDown()
 
     def make(self, conditions, staged=3):
         machine = _SimReactor(self.world, self.clock, self.world.home, conditions, staged)
@@ -163,6 +156,12 @@ class ReactorTests(harness.StubTestCase):
         self.assertLess(machine.max_temp, rx.TRIP_C + 10, self.debug_log())
         self.assertNotIn("overheated", self.debug_log())
 
+    def test_overheat_toast_is_a_timed_warning(self):
+        _machine, controller = self.make([1.0])
+        controller.on_status("overheated", 960.0)
+        self.assertIn("overheated", self.world.notices[-1])
+        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 8.0))
+
     def test_trip_guard_catches_unannounced_gain_jump(self):
         machine, controller = self.make([0.72])
         self.run_hours(machine, controller, 10)
@@ -202,16 +201,18 @@ class ReactorTests(harness.StubTestCase):
         self.assertEqual(entry["level"], "warn")
         self.assertEqual(entry["spare"], 0)
         self.assertIn("no spare Fuel Rod", entry["alert"])
-        self.assertEqual(len(self.notified), 1)
+        self.assertEqual(len(self.world.notices), 1)
+        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 0))  # sticky
         controller.ensure_rods(force=True)
-        self.assertEqual(len(self.notified), 1)  # once per episode
+        self.assertEqual(len(self.world.notices), 1)  # once per episode
         self.assertEqual(lead_cask.reactor_fuel_alerts(self.clock.tick()), [("reactor_1: " + entry["alert"], "warn")])
 
     def test_out_of_fuel_is_an_error_until_rods_return(self):
         _machine, controller = self.make([1.0], staged=0)
         controller.step()
         self.assertEqual(self.fuel_entry()["level"], "error")
-        self.assertIn("OUT OF FUEL", self.notified[-1])
+        self.assertIn("OUT OF FUEL", self.world.notices[-1])
+        self.assertEqual(self.world.notice_args[-1][1:], ("error", 0))  # sticky
         self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 3)
         controller.status = "running"
         controller.ensure_rods(force=True)
@@ -225,14 +226,14 @@ class ReactorTests(harness.StubTestCase):
         _, controller = self.make([1.0], staged=0)
         controller.step()
         self.assertEqual(self.fuel_entry()["level"], "")
-        self.assertEqual(self.notified, [])
+        self.assertEqual(self.world.notices, [])
 
     def test_spare_rods_no_alert(self):
         self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 2)
         _, controller = self.make([1.0], staged=1)
         controller.step()
         self.assertEqual(self.fuel_entry()["level"], "")
-        self.assertEqual(self.notified, [])
+        self.assertEqual(self.world.notices, [])
 
     # -- water reservation --
     def publish(self, controller):
@@ -245,7 +246,8 @@ class ReactorTests(harness.StubTestCase):
         _, controller = self.make([1.0])
         entry = self.publish(controller)
         self.assertTrue(entry["hold"])
-        self.assertEqual(len(self.notified), 1)
+        self.assertEqual(len(self.world.notices), 1)
+        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 8.0))
         self.assertEqual(entry["floor_t"], rx.WATER_RESERVE_HOURS * rx.COOLANT_MAX_T_PER_GH)
         tank._level = 55.0  # above floor, under the release line
         self.assertTrue(self.publish(controller)["hold"])

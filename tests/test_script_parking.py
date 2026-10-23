@@ -954,6 +954,7 @@ class StrayDarkTests(StubTestCase):
         self.step_at(script_parking.STRAY_NOTIFY_TICKS)
         self.assertEqual(self.strays()["smelter_1"]["stage"], 2)
         self.assertEqual(len(self.world.notices), 1)
+        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 10.0))
         self.assertIn("smelter_1", parking_client.stray_alerts()[0][0])
         self.step_at(script_parking.STRAY_NOTIFY_TICKS + 50)
         self.assertEqual(len(self.world.notices), 1)  # notified once

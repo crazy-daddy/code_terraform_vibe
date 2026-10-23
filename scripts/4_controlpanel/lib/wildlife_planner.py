@@ -808,7 +808,7 @@ def _report(plan, prev_assign, prev_buy, prev_ration):
         if state["alerts"] is not None or alerts[wc.PARK_CAPPED] or alerts[wc.PARK_NO_FEED] or alerts[wc.PARK_RATIONED]:
             message = summary_line(plan)
             if message != IDLE_SUMMARY:
-                _notify(f"[Wildlife] {message}")
+                notify(f"[Wildlife] {message}", level="warn", duration_seconds=10.0)
         state["alerts"] = alerts
 
 
@@ -926,13 +926,6 @@ def undeploy_ready(machines, statuses, status_key, field):
             if status == "ok":
                 log.print(f"[WILDLIFE] {machine_id}: undeployed ({label}); kit back in Inventory.")
     return gone
-
-
-def _notify(message):
-    try:
-        notify(message, level="warn", duration_seconds=10.0)
-    except Exception as error:
-        swallowed("wildlife_planner._notify: notify", error)
 
 
 def plan():

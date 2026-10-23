@@ -2,6 +2,7 @@
 own loadout fitting (lib/rover.py fit_rover_loadout())."""
 
 import unittest
+from unittest import mock
 
 import early_buyer
 import fleet_commission
@@ -108,6 +109,47 @@ class EarlyBuyerTests(StubTestCase):
         self.step()
         self.assertEqual(self.world.inventory.count(early_buyer.MK2_PACK), 0)
         self.assertEqual(self.tiers("pressure_generator"), [2] * (25 - 15))
+
+    def test_mk2_pack_call_that_raises_waits_without_a_warn_line(self):
+        w = self.world
+        self.pillars.update(o2=10.0, heat=12.0, pressure=0.5)
+        self.step()
+        w.research.unlocked.add(early_buyer.MK2_RESEARCH)
+
+        w.inventory.add(early_buyer.MK2_PACK, 1)
+        printed = []
+        with (
+            mock.patch.object(w.computer, "upgrade", side_effect=RuntimeError("boom")),
+            mock.patch.object(early_buyer.log, "print", side_effect=printed.append),
+        ):
+            self.buyer.apply_mk2_packs(w.home, w.computer, w.services["shop"])
+        self.assertEqual([line for line in printed if "Upgrade" in line], [])
+        self.assertEqual(self.tiers("pressure_generator").count(2), 0)
+
+    def test_deploy_that_raises_stops_the_loop_and_powers_nothing(self):
+        w = self.world
+        power = mock.Mock()
+        w.services["power_control"] = power
+        with mock.patch.object(w.computer, "deploy", side_effect=RuntimeError("boom")) as deploy:
+            deployed = self.buyer.buy_and_deploy(
+                w.services["outpost_home"], w.computer, w.services["shop"], "temp_heater", 3
+            )
+        self.assertFalse(deployed)
+        deploy.assert_called_once()  # the first failure ends the loop
+        power.set_powered.assert_not_called()
+
+    def test_undeploy_that_raises_removes_and_sells_nothing(self):
+        w = self.world
+        self.pillars.update(o2=2.5, heat=5.0)
+        self.step()
+        heaters = self.count("temp_heater")
+        shop = w.services["shop"]
+        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")) as undeploy_stub:
+            removed = self.buyer.undeploy_and_sell(w.home, w.computer, shop, "temp_heater", 0)
+        undeploy_stub.assert_called()
+        self.assertEqual(removed, 0)
+        self.assertEqual(self.count("temp_heater"), heaters)
+        self.assertFalse(shop.sold)
 
     def test_tail_packs_wait_for_research(self):
         self.pillars.update(o2=10.0, heat=12.0, pressure=1.2)

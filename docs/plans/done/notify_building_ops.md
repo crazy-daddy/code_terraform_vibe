@@ -8,7 +8,7 @@
 
 **Tech Stack:** in-game Python libs under `scripts/4_controlpanel/lib/`, `unittest` with `tests/harness.py` (`StubTestCase`, builtin `notify` appends to `self.world.notices`).
 
-**Spec:** [code_quality.md](code_quality.md), "Open candidates" (first two bullets).
+**Spec:** [code_quality.md](../code_quality.md), "Open candidates" (first two bullets).
 
 ## Global Constraints
 - Sync hold before editing `scripts/` (CLAUDE.md §Boundaries); remove it after the last edit of each task.

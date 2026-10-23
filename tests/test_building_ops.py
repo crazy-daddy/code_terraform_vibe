@@ -129,6 +129,32 @@ class UpgradeTests(StubTestCase):
         self.assertEqual(ops.jobs()[job_id]["state"], "done")
         self.assertEqual(gen.tier(), 2)
 
+    def test_upgrade_returns_status_and_message(self):
+        from game_stubs import Result
+
+        class Refusing:
+            def upgrade(self, pack, machine_id):
+                return Result("wrong_machine_type", message="not for this machine")
+
+        self.assertEqual(ops.upgrade("p", "m", Refusing()), ("wrong_machine_type", "not for this machine"))
+        self.assertEqual(ops.upgrade("p", "m", self.world.computer), ("not_upgrade_item", ""))
+
+    def test_upgrade_raise_is_error(self):
+        class Raising:
+            def upgrade(self, pack, machine_id):
+                raise RuntimeError("boom")
+
+        self.assertEqual(ops.upgrade("p", "m", Raising()), ("error", ""))
+
+    def test_upgrade_without_computer(self):
+        self.world.services.pop("computer", None)
+        self.assertEqual(ops.upgrade("p", "m"), ("no_computer", ""))
+
+    def test_call_failed_statuses_are_transient(self):
+        self.assertEqual(ops.CALL_FAILED_STATUSES, ("error", "no_computer"))
+        for status in ops.CALL_FAILED_STATUSES:
+            self.assertIn(status, ops.TRANSIENT_STATUSES)
+
 
 class RetireTests(StubTestCase):
     def setUp(self):

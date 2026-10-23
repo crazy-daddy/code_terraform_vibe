@@ -4,6 +4,7 @@ generator deployed at the same outpost at the same tier (or the best one the
 Shop sells), one machine at a time."""
 
 import unittest
+from unittest import mock
 
 import pillar_swap
 from game_stubs import Commander, PressureGenerator, Shop
@@ -124,6 +125,18 @@ class PillarSwapTests(StubTestCase):
         pillar_swap.PillarSwap().step()
         self.assertEqual(self.state()["done"], 1, self.debug_log())
         self.assertEqual(self.shop.sold, {"temp_heater": 1, "heat_upgrade_pack_mk2": 1})
+
+    def test_upgrade_call_that_raises_waits_in_the_phase(self):
+        w = self.world
+        self.heater("heater_1", w.home, tier=2)
+
+        pillar_swap.request_swap("heat", "o2")
+        with mock.patch.object(w.computer, "upgrade", side_effect=RuntimeError("boom")):
+            status = self.swapper.step()
+        self.assertIn("upgrade error, waiting", status, self.debug_log())
+        self.assertEqual(self.state()["job"]["phase"], "upgrade")
+        (o2gen,) = self.of_type("oxygen_generator").values()
+        self.assertEqual(o2gen.tier(), 1)
 
     def test_rejects_same_pillar_and_second_request(self):
         self.assertFalse(pillar_swap.request_swap("heat", "heat"))

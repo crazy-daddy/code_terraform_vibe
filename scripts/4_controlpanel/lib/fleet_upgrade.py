@@ -33,7 +33,7 @@
 
 import fleet_status
 from archive import archive
-from building_ops import classify, deploy_new
+from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, undeploy, upgrade
 from components import component, start_script
 from drone_depots import HOME_DEPOTS_KEY
 from drone_upgrade import commission_engine, fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
@@ -95,6 +95,7 @@ class FleetUpgradeCoordinator:
 
     def __init__(self):
         self.log = TreeConsole(module="fleet_upgrade")
+        self.warned = {}  # {machine_id: status} of undeploy refusals already warned about
 
     # ------------------------------------------------------------ lookups
 
@@ -325,17 +326,17 @@ class FleetUpgradeCoordinator:
         if inventory_count(kit) <= 0:
             set_order(REQUESTER, {kit: order_levels(need=1)})
             return f"{old_id}: waiting for {kit}"
-        res = computer.upgrade(kit, old_id)
-        if res.status in DEPOT_UPGRADE_WAIT_STATUSES:
-            return f"{old_id}: upgrade {res.status}"
+        status, message = upgrade(kit, old_id, computer)
+        if status in DEPOT_UPGRADE_WAIT_STATUSES or status in CALL_FAILED_STATUSES:
+            return f"{old_id}: upgrade {status}"
         clear_order(REQUESTER)
-        if res.status == "ok":
+        if status == "ok":
             self._drop("depots", old_id)
             self.log.print(f"[fleet_upgrade] Depot '{old_id}' ({depot['type_id']}) upgraded in place with '{kit}'; old kit back in Inventory.")
             return f"{old_id}: upgraded to {kit}"
-        self._patch("depots", old_id, state="blocked", reason=res.status)
-        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': upgrade('{kit}') refused ({res.status}: {res.message}); blocked.")
-        return f"{old_id}: blocked ({res.status})"
+        self._patch("depots", old_id, state="blocked", reason=status)
+        self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': upgrade('{kit}') refused ({status}: {message}); blocked.")
+        return f"{old_id}: blocked ({status})"
 
     # ------------------------------------------------------------ drone swap
 
@@ -422,17 +423,21 @@ class FleetUpgradeCoordinator:
                 self._patch("drones", old_id, state="requested")
                 return f"{old_id}: not docked/empty any more, re-requested"
             self._stop_script(old_id)
-            res = computer.undeploy(old_id)
-            if res.status != "ok":
+            status = undeploy(old_id, logger=self.log, warned=self.warned, computer=computer, tag="[fleet_upgrade] ")
+            outcome = classify(status)
+            if outcome not in ("ok", "gone"):
+                if status in CALL_FAILED_STATUSES:
+                    return f"{old_id}: undeploy {status}"
                 attempts = int(entry.get("attempts", 0)) + 1
                 if attempts >= MAX_UNDEPLOY_ATTEMPTS:
-                    self._patch("drones", old_id, state="blocked", reason=res.status)
+                    self._patch("drones", old_id, state="blocked", reason=status)
                     start_script(old_id)
-                    self.log.level("warn").print(f"[fleet_upgrade] Drone '{old_id}': undeploy refused {attempts}x ({res.status}: {res.message}); swap blocked, drone back to work.")
-                    return f"{old_id}: blocked ({res.status})"
+                    self.log.level("warn").print(f"[fleet_upgrade] Drone '{old_id}': undeploy refused {attempts}x ({status}); swap blocked, drone back to work.")
+                    return f"{old_id}: blocked ({status})"
                 self._patch("drones", old_id, attempts=attempts)
-                return f"{old_id}: undeploy {res.status}"
-            self.log.print(f"[fleet_upgrade] Undeployed '{old_id}'; its modules are back in Inventory.")
+                return f"{old_id}: undeploy {status}"
+            if outcome == "ok":
+                self.log.print(f"[fleet_upgrade] Undeployed '{old_id}'; its modules are back in Inventory.")
             drones = self._drones()
 
         if not new_id:

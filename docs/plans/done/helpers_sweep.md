@@ -8,7 +8,7 @@
 
 **Tech Stack:** `devtools/code_scan/` (Python, host-side), `unittest`, Agent tool subagents.
 
-**Spec:** [code_quality.md](code_quality.md), "Next sweep".
+**Spec:** [code_quality.md](../code_quality.md), "Next sweep".
 
 ## Global Constraints
 - Read-only on `scripts/` and `autoplay/`: no edits, no scratch files there (CLAUDE.md §Boundaries).

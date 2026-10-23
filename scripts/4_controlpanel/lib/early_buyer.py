@@ -39,6 +39,7 @@
 # The headless build-order search (devtools/simulation/headless/run.mjs --policy) sets
 # generators False: its plan places the buildings, this pass the vehicles.
 
+import building_ops
 import fleet_commission
 from archive import archive
 from components import component, machine_tier
@@ -295,12 +296,10 @@ class EarlyBuyer:
         for b_id in reversed(ids):
             if removed >= to_remove:
                 break
-            res = computer.undeploy(b_id)
-            if res.status == "ok":
+            status = building_ops.undeploy(b_id, logger=log, computer=computer, tag="[early_buyer] ")
+            if status == "ok":
                 removed += 1
                 log.print(f"[early_buyer] Undeployed {b_id} (freed slot)")
-            else:
-                log.print(f"[early_buyer] Undeploy {b_id} -> {res.status}: {res.message}")
         if removed > 0:
             sale = shop.sell(type_id, removed)
             if sale.status == "ok":
@@ -321,15 +320,15 @@ class EarlyBuyer:
         deployed = 0
         power = component("power_control")
         for _ in range(count):
-            res = computer.deploy(item_id)
-            if res.status != "ok":
-                log.print(f"[early_buyer] Deploy {item_id} -> {res.status}: {res.message}")
+            new_id, status, message = building_ops.deploy_new(item_id, None, computer=computer)  # None = home
+            if new_id is None:
+                log.print(f"[early_buyer] Deploy {item_id} -> {status}: {message}")
                 break
             deployed += 1
-            log.print(f"[early_buyer] Deployed {item_id} -> {res.machine_id}")
+            log.print(f"[early_buyer] Deployed {item_id} -> {new_id}")
             if power and not mobile:
                 try:
-                    power.set_powered(res.machine_id, True)
+                    power.set_powered(new_id, True)
                 except Exception as error:
                     swallowed("early_buyer.EarlyBuyer.buy_and_deploy: power.set_powered", error)
         return deployed > 0
@@ -346,9 +345,11 @@ class EarlyBuyer:
                 if bought.status != "ok":
                     log.debug(f"[early_buyer] Shop buy {MK2_PACK} -> {bought.status}: {bought.message}")
                     return
-            res = computer.upgrade(MK2_PACK, b_id)
-            if res.status != "ok":
-                log.print(f"[early_buyer] Upgrade {b_id} with {MK2_PACK} -> {res.status}: {res.message}")
+            status, message = building_ops.upgrade(MK2_PACK, b_id, computer)
+            if status in building_ops.CALL_FAILED_STATUSES:
+                return
+            if status != "ok":
+                log.print(f"[early_buyer] Upgrade {b_id} with {MK2_PACK} -> {status}: {message}")
                 return
             log.print(f"[early_buyer] Upgraded {b_id} to Pressure Mk II.")
 

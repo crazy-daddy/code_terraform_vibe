@@ -19,6 +19,7 @@
 # State: fleet.upgrade[STATE_KEY] = {"refused": {machine_id: [status, tick]}},
 # fleet.upgrade[STATUS_KEY] = one status line.
 
+import building_ops
 from components import component, machine_tier
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade
 from fluid_routing import poi_extractor_ids
@@ -128,19 +129,15 @@ class MachinePackUpgrader:
 
     def _apply(self, computer: "Computer", pack, machine_id, now):
         """computer.upgrade(pack, machine_id); True when the machine is done (ok or already at the tier)."""
-        try:
-            res = computer.upgrade(pack, machine_id)
-        except Exception as error:
-            swallowed("machine_pack_upgrade._apply: computer.upgrade", error)
-            return False
-        if res.status == "ok":
+        status, message = building_ops.upgrade(pack, machine_id, computer)
+        if status == "ok":
             self.log.print(f"[machine_upgrade] '{machine_id}' upgraded with '{pack}'.")
             return True
-        if res.status == "tier_too_high":
+        if status == "tier_too_high":
             return True
-        if res.status not in WAIT_STATUSES:
-            self._refuse(machine_id, res.status, now)
-            self.log.level("warn").print(f"[machine_upgrade] upgrade('{pack}', '{machine_id}') refused ({res.status}: {res.message}); retry in {REFUSED_RETRY_TICKS} ticks.")
+        if status not in WAIT_STATUSES and status not in building_ops.CALL_FAILED_STATUSES:
+            self._refuse(machine_id, status, now)
+            self.log.level("warn").print(f"[machine_upgrade] upgrade('{pack}', '{machine_id}') refused ({status}: {message}); retry in {REFUSED_RETRY_TICKS} ticks.")
         return False
 
     # ------------------------------------------------------------ oil pumps

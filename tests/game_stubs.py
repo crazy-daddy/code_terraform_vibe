@@ -2793,6 +2793,7 @@ class World:
         self.outposts = {}
         self.notebook = Notebook()
         self.notices = []  # notify() texts (harness builtin)
+        self.notice_args = []  # notify() (text, level, duration_seconds), same order as notices
         self.status = None  # (message, level) from set_status(), None after clear_status() (harness builtins)
         self.clock = Clock()
         self.console = Console()

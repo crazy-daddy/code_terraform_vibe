@@ -143,13 +143,6 @@ def heat_for(gain):
     return min(1.0, max(0.0, TARGET_C / gain))
 
 
-def _notify(text, level="warn", duration=8.0):
-    try:
-        notify(text, level=level, duration_seconds=duration)
-    except Exception as error:
-        swallowed("reactor._notify: notify", error)
-
-
 class ReactorController(MachineController):
     """Holds a Reactor just under full output with a measured gain, and keeps it fuelled and cooled."""
 
@@ -337,10 +330,10 @@ class ReactorController(MachineController):
             where = f"Fuel Assembler and Lead Casks at '{outpost_id}'"
             if level == "error":
                 self.log.level("error").print(f"[{self.name}] OUT OF FUEL RODS: no power from this Reactor. Check the {where}.")
-                _notify(f"[Power] Reactor '{self.name}' is OUT OF FUEL RODS: main power lost. Check the {where}.", level="error", duration=0)
+                notify(f"[Power] Reactor '{self.name}' is OUT OF FUEL RODS: main power lost. Check the {where}.", level="error", duration_seconds=0)
             elif level == "warn":
                 self.log.level("warn").print(f"[{self.name}] No spare Fuel Rod: ~{hours:.0f} game h of fuel left. Check the {where}.")
-                _notify(f"[Power] Reactor '{self.name}' has no spare Fuel Rod: ~{hours:.0f} game h of fuel left. Check the {where}.", level="warn", duration=0)
+                notify(f"[Power] Reactor '{self.name}' has no spare Fuel Rod: ~{hours:.0f} game h of fuel left. Check the {where}.", level="warn", duration_seconds=0)
             else:
                 self.log.print(f"[{self.name}] Fuel supply restored: {spare} spare Fuel Rod(s).")
             self.fuel_alert = level
@@ -393,7 +386,7 @@ class ReactorController(MachineController):
         if flip:
             if hold:
                 self.log.level("warn").print(f"[{self.name}] Water reserve ON: tanks {level:.0f} t < {floor:.0f} t floor; only Reactors draw water.")
-                _notify(f"[Power] Water reserved for {len(reactors)} Reactor(s): tanks at {level:.0f} t.")
+                notify(f"[Power] Water reserved for {len(reactors)} Reactor(s): tanks at {level:.0f} t.", level="warn", duration_seconds=8.0)
             else:
                 self.log.print(f"[{self.name}] Water reserve OFF: tanks {level:.0f} t (release at {floor * WATER_RESERVE_RELEASE_FACTOR:.0f} t).")
         try:
@@ -423,7 +416,7 @@ class ReactorController(MachineController):
         if status == "overheated":
             self.forget_gain("overheated")
             self.log.level("warn").print(f"[{self.name}] Overheated at {temp:.0f} °C, cooling to 600 °C.")
-            _notify(f"[Power] Reactor '{self.name}' overheated and is cooling down.")
+            notify(f"[Power] Reactor '{self.name}' overheated and is cooling down.", level="warn", duration_seconds=8.0)
         elif status == "no_fuel":
             self.log.level("warn").print(f"[{self.name}] Out of Fuel Rods.")
         elif status == "no_coolant":

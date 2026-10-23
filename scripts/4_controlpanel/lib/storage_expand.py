@@ -17,6 +17,7 @@
 # the kit is theirs. A kit bought here whose deploy fails stays in Inventory
 # and is deployed on a later pass.
 
+import building_ops
 import cash
 from components import component
 from drone_upgrade import fleet_upgrade_state
@@ -137,14 +138,14 @@ class StorageExpander:
         return None
 
     def _deploy(self, type_id, name, outpost_id, now):
-        computer = component("computer")
-        if not computer or not hasattr(computer, "deploy"):
+        new_id, status, message = building_ops.deploy_new(type_id, outpost_id)
+        if status == "no_computer":
             return "no Ship Computer"
-        res = computer.deploy(type_id, outpost_id)
         self.settled[outpost_id] = now  # a refused deploy retries after SETTLE_TICKS too
-        if res.status != "ok":
-            self.log.level("warn").print(f"[{MODULE}] deploy('{type_id}', '{outpost_id}') refused ({res.status}: {res.message}); kit stays in Inventory, retrying in {SETTLE_TICKS} ticks.")
-            return f"deploy {res.status}"
+        if new_id is None:
+            if status not in building_ops.CALL_FAILED_STATUSES:  # a raise waits quietly, no warn
+                self.log.level("warn").print(f"[{MODULE}] deploy('{type_id}', '{outpost_id}') refused ({status}: {message}); kit stays in Inventory, retrying in {SETTLE_TICKS} ticks.")
+            return f"deploy {status}"
         forget_storage_discovery()  # the next count and every unload target must see the new store
-        self.log.print(f"[{MODULE}] Deployed {name} '{res.machine_id}' at storage outpost '{outpost_id}'.")
-        return f"deployed {name} {res.machine_id}"
+        self.log.print(f"[{MODULE}] Deployed {name} '{new_id}' at storage outpost '{outpost_id}'.")
+        return f"deployed {name} {new_id}"
