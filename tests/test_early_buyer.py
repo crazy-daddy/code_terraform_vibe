@@ -126,6 +126,18 @@ class EarlyBuyerTests(StubTestCase):
         self.assertEqual([line for line in printed if "Upgrade" in line], [])
         self.assertEqual(self.tiers("pressure_generator").count(2), 0)
 
+    def test_undeploy_that_raises_removes_and_sells_nothing(self):
+        w = self.world
+        self.pillars.update(o2=2.5, heat=5.0)
+        self.step()
+        heaters = self.count("temp_heater")
+        shop = w.services["shop"]
+        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")):
+            removed = self.buyer.undeploy_and_sell(w.home, w.computer, shop, "temp_heater", 0)
+        self.assertEqual(removed, 0)
+        self.assertEqual(self.count("temp_heater"), heaters)
+        self.assertFalse(shop.sold)
+
     def test_tail_packs_wait_for_research(self):
         self.pillars.update(o2=10.0, heat=12.0, pressure=1.2)
         self.step()

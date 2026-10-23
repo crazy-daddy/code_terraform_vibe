@@ -20,6 +20,54 @@ class SwappedNameTests(unittest.TestCase):
             self.assertEqual(fleet_upgrade.swapped_name(name, "drone_14", "drone_21"), name)
 
 
+class DroneSwapUndeployTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.outpost = w.add_outpost("outpost_2")
+        self.depot = w.add_drone_depot("drone_station_1", self.outpost)
+        w.add_drone("drone_1", self.outpost, station=self.depot.id)
+        self.coordinator = fleet_upgrade.FleetUpgradeCoordinator()
+        self.entry = {
+            "state": "swapping",
+            "target_kind": "drone_small",
+            "outpost": self.outpost.id,
+            "known": ["drone_1"],
+        }
+        drone_upgrade.update_fleet_upgrade(lambda s: s.setdefault("drones", {}).update({"drone_1": dict(self.entry)}))
+
+    def swap(self):
+        drones = self.coordinator._drones()
+        return self.coordinator._swap_drone("drone_1", self.entry, drones, self.world.computer)
+
+    def drone_entry(self):
+        return drone_upgrade.fleet_upgrade_state()["drones"]["drone_1"]
+
+    def test_not_found_continues_to_the_deploy_step(self):
+        w = self.world
+        w.computer.forced_status = "not_found"
+        text = self.swap()
+        self.assertTrue(any(c[0] == "deploy" for c in w.computer.calls), self.debug_log())
+        self.assertIn("deploy not_found", text)
+        self.assertEqual(self.drone_entry()["state"], "swapping")
+        self.assertNotIn("Undeployed", self.debug_log())
+
+    def test_undeploy_that_raises_waits_without_counting_an_attempt(self):
+        w = self.world
+        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")):
+            texts = [self.swap() for _ in range(fleet_upgrade.MAX_UNDEPLOY_ATTEMPTS + 2)]
+        self.assertEqual(set(texts), {"drone_1: undeploy error"})
+        self.assertEqual(self.drone_entry().get("attempts", 0), 0)
+        self.assertEqual(self.drone_entry()["state"], "swapping")
+
+    def test_fatal_refusal_blocks_after_max_attempts(self):
+        self.world.computer.forced_status = "not_undeployable"
+        for _ in range(fleet_upgrade.MAX_UNDEPLOY_ATTEMPTS):
+            self.entry = dict(self.drone_entry())
+            self.swap()
+        self.assertEqual(self.drone_entry()["state"], "blocked")
+
+
 class DepotUpgradeTests(StubTestCase):
     def setUp(self):
         super().setUp()

@@ -37,6 +37,7 @@
 # modules inside forget_machine().
 
 from archive import archive
+from building_ops import CALL_FAILED_STATUSES, classify, undeploy
 from components import component, start_script
 from drone_claims import set_drone_recalled
 from item_tiers import DEPOT_TYPE_TIERS
@@ -123,6 +124,7 @@ class FleetDecommissionCoordinator:
 
     def __init__(self):
         self.log = TreeConsole(module="fleet_decommission")
+        self.warned = {}  # {machine_id: status} of undeploy refusals already warned about
 
     # ------------------------------------------------------------ lookups
 
@@ -237,20 +239,20 @@ class FleetDecommissionCoordinator:
         parts = self._vehicle_parts(machine_id, kind) if kind in VEHICLE_KIT_IDS else {}
         before = {item_id: inventory_count(item_id) for item_id in parts}
         self._stop_script(machine_id)
-        res = computer.undeploy(machine_id)
-        if res.status != "ok":
-            attempts = int(entry.get("attempts", 0)) + (0 if res.status in RETRY_STATUSES else 1)
+        status = undeploy(machine_id, logger=self.log, warned=self.warned, computer=computer, tag="[decommission] ")
+        if classify(status) not in ("ok", "gone"):
+            attempts = int(entry.get("attempts", 0)) + (0 if status in RETRY_STATUSES or status in CALL_FAILED_STATUSES else 1)
             start_script(machine_id)
             if attempts >= MAX_UNDEPLOY_ATTEMPTS:
-                self._patch(machine_id, state="blocked", attempts=attempts, reason=res.status)
+                self._patch(machine_id, state="blocked", attempts=attempts, reason=status)
                 _set_recalled(machine_id, kind, False)
-                self.log.level("warn").print(f"[decommission] '{machine_id}': undeploy refused {attempts}x ({res.status}: {res.message}); blocked, back to work.")
+                self.log.level("warn").print(f"[decommission] '{machine_id}': undeploy refused {attempts}x ({status}); blocked, back to work.")
                 self.log.end("blocked")
-                return f"{machine_id} blocked ({res.status})"
+                return f"{machine_id} blocked ({status})"
             self._patch(machine_id, state="requested", attempts=attempts)
-            self.log.debug(f"undeploy('{machine_id}') -> {res.status}: {res.message}; attempt {attempts}/{MAX_UNDEPLOY_ATTEMPTS}.")
-            self.log.end(f"undeploy {res.status}, retrying")
-            return f"{machine_id} undeploy {res.status}"
+            self.log.debug(f"undeploy('{machine_id}') -> {status}; attempt {attempts}/{MAX_UNDEPLOY_ATTEMPTS}.")
+            self.log.end(f"undeploy {status}, retrying")
+            return f"{machine_id} undeploy {status}"
 
         sold = self._sell_returned(parts, before) if parts else "hardware kept in Inventory"
         forget_machine(machine_id, kind)

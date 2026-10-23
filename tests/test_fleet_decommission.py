@@ -3,6 +3,7 @@ request -> machine marks ready -> coordinator undeploys, sells vehicle parts
 only, and drops the machine's archive entries."""
 
 import unittest
+from unittest import mock
 
 import fleet_decommission
 import fleet_status
@@ -116,6 +117,36 @@ class DecommissionTests(DecommissionTestCase):
         assert entry is not None
         self.assertEqual(entry["state"], "blocked")
         self.assertFalse(is_vehicle_recalled("pioneer_1"))
+
+    def test_not_found_counts_as_done_and_forgets_the_machine(self):
+        self.computer.forced_status = "not_found"
+        fleet_decommission.request_decommission("pioneer_1", "pioneer")
+        fleet_decommission.mark_decommission_ready("pioneer_1")
+        self.step()
+        self.assertIsNone(fleet_decommission.decommission_entry("pioneer_1"), self.debug_log())
+        self.assertFalse(is_vehicle_recalled("pioneer_1"))
+
+    def test_undeploy_that_raises_waits_without_counting_an_attempt(self):
+        fleet_decommission.request_decommission("pioneer_1", "pioneer")
+        with mock.patch.object(self.computer, "undeploy", side_effect=RuntimeError("boom")):
+            for _ in range(fleet_decommission.MAX_UNDEPLOY_ATTEMPTS + 2):
+                fleet_decommission.mark_decommission_ready("pioneer_1")
+                self.step()
+        entry = fleet_decommission.decommission_entry("pioneer_1")
+        assert entry is not None
+        self.assertEqual(entry["state"], "requested", self.debug_log())
+        self.assertEqual(entry.get("attempts", 0), 0)
+
+    def test_fatal_refusal_blocks_after_max_attempts(self):
+        self.computer.forced_status = "not_undeployable"
+        fleet_decommission.request_decommission("pioneer_1", "pioneer")
+        for _ in range(fleet_decommission.MAX_UNDEPLOY_ATTEMPTS):
+            fleet_decommission.mark_decommission_ready("pioneer_1")
+            self.step()
+        entry = fleet_decommission.decommission_entry("pioneer_1")
+        assert entry is not None
+        self.assertEqual(entry["state"], "blocked")
+        self.assertEqual(entry["attempts"], fleet_decommission.MAX_UNDEPLOY_ATTEMPTS)
 
     def test_vanished_machine_entry_dropped(self):
         fleet_decommission.request_decommission("pioneer_1", "pioneer")

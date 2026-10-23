@@ -296,12 +296,10 @@ class EarlyBuyer:
         for b_id in reversed(ids):
             if removed >= to_remove:
                 break
-            res = computer.undeploy(b_id)
-            if res.status == "ok":
+            status = building_ops.undeploy(b_id, logger=log, computer=computer, tag="[early_buyer] ")
+            if status == "ok":
                 removed += 1
                 log.print(f"[early_buyer] Undeployed {b_id} (freed slot)")
-            else:
-                log.print(f"[early_buyer] Undeploy {b_id} -> {res.status}: {res.message}")
         if removed > 0:
             sale = shop.sell(type_id, removed)
             if sale.status == "ok":
