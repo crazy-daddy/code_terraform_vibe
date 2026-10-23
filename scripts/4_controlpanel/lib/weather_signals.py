@@ -27,7 +27,6 @@
 #   weather.aftermaths {event_id: {"kind", "x", "y", "units_min", "units_max",
 #                      "ready_gh", "expires_gh", "decoded_gh"}} for the collector.
 
-import components
 import game_clock
 from archive import archive
 from components import weather_station
@@ -98,7 +97,12 @@ def missing_biomes(stations):
 def discover_stations():
     """[(station_id, biome, powered)] for every Weather Station on the outpost network."""
     stations = []
-    for outpost in components.outposts():
+    # Not components.outposts(): a raise must reach refresh_stations(), which
+    # keeps the last list instead of reading every biome as uncovered.
+    network = get_component("outpost_network")
+    if network is None:
+        return stations
+    for outpost in network.outposts():
         biome = getattr(outpost, "biome", None)
         for ref in outpost.buildings(STATION_TYPE_ID):
             stations.append((ref.id, biome, bool(getattr(ref, "powered", False))))

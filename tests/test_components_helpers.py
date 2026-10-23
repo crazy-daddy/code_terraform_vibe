@@ -8,7 +8,6 @@ from game_stubs import OutpostNetwork, Research
 from production_core import _all_outposts
 from storage_expand import StorageExpander
 from warehouse_upgrade import WarehouseUpgrader
-from weather_signals import discover_stations
 
 
 class _RaisingResearch(Research):
@@ -45,10 +44,6 @@ class OutpostsTests(harness.StubTestCase):
         home = home_outpost()
         self.raise_on_outposts()
         self.assertEqual(_all_outposts(), [home])
-
-    def test_weather_stations_survive_network_raise(self):
-        self.raise_on_outposts()
-        self.assertEqual(discover_stations(), [])
 
 
 class ResearchUnlockedTests(harness.StubTestCase):
