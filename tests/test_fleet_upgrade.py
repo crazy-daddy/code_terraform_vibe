@@ -90,12 +90,24 @@ class DepotUpgradeTests(StubTestCase):
         return self.world.notebook.get(production.ORDERS_KEY) or {}
 
     def test_depot_deployed_in_same_tick_is_seen(self):
-        # the network depot walk memoizes; _advance_depot must not read through it
-        drone_depots._DISCOVERY.ttl_ticks = drone_depots.DISCOVERY_TTL_TICKS
+        # the network depot walk memoizes 20 ticks; _advance_depot must still see a depot deployed since
         drone_depots.discover_drone_depots()
         new_depot = self.world.add_drone_depot("drone_station_2", self.outpost)
-        self.assertNotIn(new_depot.id, {d["id"] for d in drone_depots.discover_drone_depots()})
-        self.assertIn(new_depot.id, {d["id"] for d in self.coordinator._depots()})
+        drone_upgrade.update_fleet_upgrade(
+            lambda s: s.setdefault("depots", {}).update(
+                {
+                    new_depot.id: {
+                        "state": "ordered",
+                        "target_kit": "drone_station_kit_large",
+                        "outpost": self.outpost.id,
+                    }
+                }
+            )
+        )
+        self.world.inventory.add("drone_station_kit_large", 1)
+        self.steps(1)
+        self.assertEqual(new_depot.type_id, "drone_station_large", self.debug_log())
+        self.assertNotIn(new_depot.id, self.depot_entries())
 
     def test_upgrades_in_place_and_keeps_docked_drone(self):
         w = self.world

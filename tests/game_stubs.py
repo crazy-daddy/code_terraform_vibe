@@ -167,7 +167,7 @@ class BuildingRef:
         self.type_id = component.type_id
         self.outpost = component.outpost
         self.powered = True
-        self.position = [0.0, 0.0]
+        self.position = getattr(component, "ref_position", None)  # a test sets ref_position where it needs coords
 
 
 class OutpostRef:
