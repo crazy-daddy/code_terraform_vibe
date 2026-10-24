@@ -29,13 +29,8 @@ def release_finished_claims(name, live_job_ids, existing_claims, log):
         return 0
     dead = set(mine)
 
-    def updater(claims):
-        if not isinstance(claims, dict):
-            return {}
-        return {k: v for k, v in claims.items() if k not in dead}
-
-    archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-    archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+    archive.pop_entries(SURVEY_CLAIMS_KEY, dead)
+    archive.pop_entries(LEGACY_ROVER_CLAIMS_KEY, dead)
     log.print(f"[{name}] Released {len(dead)} build claim(s) on finished/removed blueprints.")
     return len(dead)
 
@@ -143,12 +138,7 @@ def prune_priorities(name, priorities, live_job_ids, log):
         return 0
     dead = set(stale)
 
-    def updater(current):
-        if not isinstance(current, dict):
-            return {}
-        return {k: v for k, v in current.items() if k not in dead}
-
-    archive.transaction(construction_plan.PRIORITY_KEY, {}, updater)
+    archive.pop_entries(construction_plan.PRIORITY_KEY, dead)
     log.debug(f"[{name}] Pruned {len(dead)} construction.priority entr(ies) of finished/removed blueprints.")
     return len(dead)
 

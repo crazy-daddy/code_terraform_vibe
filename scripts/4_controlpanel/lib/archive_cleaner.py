@@ -268,16 +268,16 @@ class ArchiveCleaner:
         a dry run). With `still_stale(entry)`, pops only those it still
         matches inside the transaction. Returns len(stale)."""
         if stale and not self.dry_run:
+            if still_stale is None:
+                self.archive.pop_entries(key, stale)
+            else:
 
-            def updater(current):
-                if not isinstance(current, dict):
-                    return {}
-                for name in stale:
-                    if still_stale is None or still_stale(current.get(name)):
-                        current.pop(name, None)
-                return current
+                def pop_still_stale(current):
+                    for name in stale:
+                        if still_stale(current.get(name)):
+                            current.pop(name, None)
 
-            self.archive.transaction(key, {}, updater)
+                self.archive.mutate(key, pop_still_stale)
         return len(stale)
 
     def _retire_legacy_key(self, key):

@@ -53,16 +53,10 @@ def release(machine_ids):
     if not gone:
         return
 
-    def updater(entries):
-        entries = entries if isinstance(entries, dict) else {}
-        for machine_id in gone:
-            entries.pop(machine_id, None)
-        return entries
-
     try:
-        archive.transaction(RETIRED_KEY, {}, updater)
+        archive.pop_entries(RETIRED_KEY, gone)
     except Exception as error:
-        swallowed("retired_machines.release: archive.transaction", error)
+        swallowed("retired_machines.release: archive.pop_entries", error)
 
 
 def sell_kits(shop: "Shop", item_ids, logger, warn=True):

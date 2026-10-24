@@ -397,14 +397,7 @@ def prune_roles(live_ids):
     if not stale:
         return 0
 
-    def updater(entries):
-        if not isinstance(entries, dict):
-            return {}
-        for outpost_id in stale:
-            entries.pop(outpost_id, None)
-        return entries
-
-    archive.transaction(ROLES_KEY, {}, updater)
+    archive.pop_entries(ROLES_KEY, stale)
     return len(stale)
 
 
