@@ -27,7 +27,7 @@
 
 import cash
 from building_ops import classify, deploy_new, undeploy
-from components import building_ids_at, outpost_by_id, research_unlocked
+from components import building_ids_at, component, outpost_by_id, research_unlocked
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
@@ -53,14 +53,6 @@ def _shape(text):
     return "".join(out)
 
 
-def component(component_id, where):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed(f"{where}: get_component", error)
-        return None
-
-
 class BuildingSwapUpgrader:
     """Small-building group -> one large building swap state machine. One instance, reused across cycles."""
 
@@ -83,7 +75,7 @@ class BuildingSwapUpgrader:
         self.warned = {}  # {machine_id: status}: building_ops.undeploy() warns once per refusal
 
     def _component(self, component_id):
-        return component(component_id, f"{self.MODULE}._component")
+        return component(component_id, f"{self.MODULE}._component")  # pyright: ignore[reportCallIssue]
 
     # ------------------------------------------------------------ lookups
 

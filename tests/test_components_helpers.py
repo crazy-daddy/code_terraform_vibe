@@ -1,5 +1,6 @@
 """lib/components.py guarded reads: research_unlocked / all_research_unlocked, outposts(), per-outpost lookups, sensor_value."""
 
+import builtins
 import unittest
 
 import harness
@@ -7,6 +8,7 @@ from components import (
     all_research_unlocked,
     building_ids_at,
     building_type_counts,
+    component,
     components_at,
     home_outpost,
     outpost_by_id,
@@ -29,6 +31,31 @@ class _RaisingResearch(Research):
 class _RaisingNetwork(OutpostNetwork):
     def outposts(self):
         raise RuntimeError("network offline")
+
+
+class ComponentTests(harness.StubTestCase):
+    def raise_on_lookup(self):
+        real = self.world.get_component
+
+        def lookup(component_id):
+            if component_id == "research":
+                raise RuntimeError("lookup offline")
+            return real(component_id)
+
+        builtins.get_component = lookup  # type: ignore[attr-defined]
+
+    def test_component_reads_service(self):
+        self.assertIs(component("research"), self.world.services["research"])
+
+    def test_component_raise_reads_none_under_own_label(self):
+        self.raise_on_lookup()
+        self.assertIsNone(component("research"))
+        self.assertIn("[swallowed] components.component: get_component:", self.debug_log())
+
+    def test_component_raise_names_the_caller_label(self):
+        self.raise_on_lookup()
+        self.assertIsNone(component("research", "test.where"))  # pyright: ignore[reportCallIssue]
+        self.assertIn("[swallowed] test.where: get_component:", self.debug_log())
 
 
 class OutpostsTests(harness.StubTestCase):

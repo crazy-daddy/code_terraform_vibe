@@ -105,11 +105,11 @@ def weather_station(component_id) -> "WeatherStation | None":
     return get_component(component_id)  # type: ignore[return-value]
 
 
-def _component(component_id):
+def _component(component_id, where="components.component"):
     try:
         return get_component(component_id)
     except Exception as error:
-        swallowed("components.component: get_component", error)
+        swallowed(f"{where}: get_component", error)
         return None
 
 
