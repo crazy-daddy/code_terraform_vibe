@@ -65,7 +65,7 @@ from components import home_outpost
 from game_clock import TickCache, is_fresh
 from game_rules import CROP_AUTOMATOR_OUTPUT_CAP
 from machine_controller import MachineController, port_counts
-from parking_client import ParkRequester
+from parking_client import ParkRequester, is_shedded
 from seed_supply import seed_buffer
 from storage_take import hit_slot_cap, take_item
 from storage_unload import eject_unneeded
@@ -178,8 +178,7 @@ class CropAutomatorController(MachineController):
         return view
 
     def is_shedded(self):
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self.name in shedded
+        return is_shedded(self.name)
 
     def refresh_seed_demand_if_stale(self, curr_tick, layout, rules, automators):
         """

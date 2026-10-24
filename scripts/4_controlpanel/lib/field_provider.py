@@ -22,7 +22,7 @@ import field_layout
 import fluid_routing
 from archive import archive
 from machine_controller import MachineController
-from parking_client import ParkRequester
+from parking_client import ParkRequester, is_shedded
 from production import discover_fluid_sources, home_outpost_id
 from storage_take import take_item
 from swallow import swallowed
@@ -128,8 +128,7 @@ class FieldProviderController(MachineController):
         return out
 
     def is_shedded(self):
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self.name in shedded
+        return is_shedded(self.name)
 
     # --------------------------------------------------------------- supply
 

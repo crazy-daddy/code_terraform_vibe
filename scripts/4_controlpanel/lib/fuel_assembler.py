@@ -42,10 +42,9 @@
 
 import lead_cask
 import power
-from archive import archive
 from components import components_at
 from machine_controller import MachineController, port_counts
-from parking_client import ParkRequester
+from parking_client import ParkRequester, is_shedded
 from priority import UPGRADE
 from production import ORDER_STALE_TICKS, blueprint_required_items, consume_manual_order, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, get_manual_orders, order_levels, set_order
 from stock_scan import held_units
@@ -401,8 +400,7 @@ class FuelAssemblerController(MachineController):
     # ---------------------------------------------------------------- loop
 
     def shed(self):
-        shedded = archive.get("power.shedded", []) or []
-        return isinstance(shedded, list) and self.name in shedded
+        return is_shedded(self.name)
 
     def rod_emergency(self, curr_tick):
         """True while a Reactor at this outpost is in dire need of Fuel Rods; logs each change."""

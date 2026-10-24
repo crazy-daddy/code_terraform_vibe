@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from game_clock import is_fresh
+from parking_client import is_shedded
 from production import claim_site_id, site_recipe_claims
 from swallow import swallowed
 
@@ -149,5 +150,4 @@ class RecipeClaimMixin:
         never powered off, since they only draw power while crafting; not starting
         or topping up production saves the same power without a wake call to undo.
         """
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self._host.name in shedded
+        return is_shedded(self._host.name)

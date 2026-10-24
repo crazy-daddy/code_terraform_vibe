@@ -61,7 +61,7 @@ from archive import archive
 from atomic import run_atomic
 from components import oil_pump, set_powered
 from game_clock import now_tick
-from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, STRAY_KEY, _clear_requests
+from parking_client import HOLDS_KEY, OIL_SURPLUS_WAKE_FRACTION, PARK_REQUESTS_KEY, PARKED_KEY, RUN_OK, SHEDDED_KEY, STRAY_KEY, _clear_requests
 from retired_machines import retired_ids
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -305,7 +305,7 @@ class ScriptParking:
         before = dict(parked)
         requests = archive.get(PARK_REQUESTS_KEY, {}) or {}
         requests = requests if isinstance(requests, dict) else {}
-        shed = set(archive.get("power.shedded", []) or [])
+        shed = set(archive.get(SHEDDED_KEY, []) or [])
         if full:
             self._members_seen = self._members(grids)
         members = self._members_seen or {}
