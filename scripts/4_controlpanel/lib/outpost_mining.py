@@ -167,12 +167,7 @@ def publish_reach(vehicle_name, outpost_id, ores, tick):
         return False
     fresh = {"outpost": outpost_id, "ores": ores, "tick": tick}
 
-    def updater(reach):
-        reach = reach if isinstance(reach, dict) else {}
-        reach[vehicle_name] = fresh
-        return reach
-
-    return _archive().transaction(MINING_REACH_KEY, {}, updater)
+    return _archive().set_entry(MINING_REACH_KEY, vehicle_name, fresh)
 
 
 def mineable_ores_by_outpost(tick=None):

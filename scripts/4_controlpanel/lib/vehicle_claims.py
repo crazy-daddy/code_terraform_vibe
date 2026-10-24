@@ -345,13 +345,7 @@ class VehicleClaimsMixin:
             self.release_target_claim(target_key)
             return
 
-        def updater(targets):
-            if not isinstance(targets, dict):
-                targets = {}
-            targets[target_key] = entry
-            return targets
-
-        archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
+        archive.set_entry(SURVEY_UNSUPPORTED_KEY, target_key, entry)
         try:
             place_unsupported_marker(target_key, entry)
         except Exception as error:
