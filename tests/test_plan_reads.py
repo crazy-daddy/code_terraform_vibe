@@ -85,6 +85,15 @@ class PlanReadsTests(StubTestCase):
                 logistics_requests.fair_tier_caps(outpost.id, priority.STOCK, buffer, supply, now),
             )
 
+    def test_pickup_totals_sum_fresh_units_per_item_that_pass_the_predicate(self):
+        now, _ = self._world()
+        everything = logistics_requests._pickup_totals(lambda entry: True, now)
+        self.assertEqual(everything, {"iron_ore": 39, "copper_ore": 15})
+        aboard = logistics_requests._pickup_totals(lambda entry: entry.get("aboard"), now)
+        self.assertEqual(aboard, {"copper_ore": 15})
+        stale = now + logistics_requests.PICKUP_STALE_TICKS
+        self.assertEqual(logistics_requests._pickup_totals(lambda entry: True, stale), {})
+
     def test_stock_read_once_per_outpost(self):
         now, outposts = self._world()
         warehouse = self.world.components["wh_a"]
