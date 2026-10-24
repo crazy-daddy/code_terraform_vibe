@@ -11,8 +11,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   (`aa72616`, `d35a168`); Vector 2 landed partly (`065c2a8`, 124 to 105 ticks per step); Vector 3 fixed trigger
   (a) (`49079d2`), dropped (b); Vector 4 closed, not needed; Vector 5 closed by measurement (1 tick per call);
   Vector 6 landed (`f50ef15`, `9af116d`). [vector1_tier_snapshot_2026-10.md](done/vector1_tier_snapshot_2026-10.md)
-  still carries 31 unchecked task boxes although its outcome rows exist: tick them from the commits, then move
-  it to `done/`.
+  is closed (all boxes ticked, moved to `done/`, 2026-10-24).
 - **Import-cap margin**: nothing landed. The 9,637-step count for the `outpost_plan` chain has no committed
   method that measures it (plan, "Vector 6" outcome, last bullet). `devtools/perf/tick_profile.py:418` only
   explains the crash after the fact.
@@ -46,7 +45,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    slot over a threshold (suggest 90 % of 10,000), and fail `tests/` or a devtools check when one exceeds it.
    Then trim the `outpost_plan` chain (work out of module bodies, lazy imports) until `infra_planner_automation`
    has real headroom, and record the before/after counts in the plan's Results table.
-2. **Vector 1 plan bookkeeping** (same session or a short one): tick the boxes, move the file to `done/`.
+2. ~~**Vector 1 plan bookkeeping**~~: done 2026-10-24.
 3. **`_replan` outside `_rank`** (one session): profile with the Vector 6 command, find which of `snapshot`,
    `needs`, `plan_hosts` carries the 276 ticks, then the usual hoist or slice. Rankings are pinned by a test.
 4. ~~**`outpost_sources`**~~: closed by measurement 2026-10-24, no code (plan "Results" row).
