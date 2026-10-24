@@ -120,7 +120,7 @@ Wave 3:
 - **Vector 6** founding planner, after Tool 1: profile with the `founding` preset on save 0061 (sample saves `20261008_7e5e168`; 0839 has no founding bundle, `_rank` costs 0 ticks there), then hoist per the vector list. The full preset does not fit: the `outpost_plan` import chain uses 9,637 of the 10,000-step import cap unwrapped, and its 144 wrappers add ~1,300. Gate `outpost_plan:OutpostPlanner._rank` (nearly all of `_replan`'s cost) with a narrow `--modules` list. Outcome: done (`f50ef15`, review fixes `9af116d`); rankings identical, pinned by a test. The gain came from re-costing the slice units to the measured work and raising `STEP_UNITS` 50 to 64: ticks follow the number of atomic slices, not the work done in them. Open:
   - `_replan` costs 276 ticks on 0839 outside `_rank` (likely `snapshot`, `needs` or `plan_hosts`).
   - The coarse filter (~155 ticks) is the next lever. `FILTER_CHUNK` cannot grow: the dense-pipe worst case is 3355 ops.
-  - The 9,637-step import-chain count has no committed method that measures it (relevant to the import-cap TODO).
+  - The 9,637-step import-chain count has no committed method that measures it (relevant to the import-cap TODO). Closed 2026-10-24: `devtools/perf/import_steps.py` (Results, last row).
 - **Drone plan debug lines** (Vector 1 follow-up): build the planner's debug lines and log blocks in `drone_haul_plan` only while debug logging is on, then remeasure with the Vector 1 drone command (row below). Outcome: done (`5ad1bba`); debug lines are built only when `log.debugging` is set. Gain ~14 ticks at info, none at the default debug level. Debug logging as a whole costs the drone plan ~93 ticks per call.
 
 ## Results
@@ -140,5 +140,6 @@ Wave 3:
 | 2026-10-22 | Vector 6 founding planner (`--modules "" --classes "" --skip "" --min-total 5 --include-autoplay`; log level info) | 0061 (7e5e168) | outpost_plan:OutpostPlanner._rank | 0.4 h | 741 (721-745), n=3 | 645 (576-693), n=3 | f50ef15 |
 | 2026-10-22 | Vector 4 gate: run-4 wrap-set crash probe | 0839 | drone_haul_plan:plan_haul_job | 0.4 h | crash drone_7/8 (debug) | crash drone_7-9 (debug), drone_7-11 (info); needs logistics_requests+priority wrapped; step_profile haul peak ~2,224 steps, unchanged | 59a8df8 |
 | 2026-10-24 | `outpost_sources` (closed, no code; Vector 1 drone cmd, info) | 0839 | drone_haul_plan:plan_haul_job | 0.4 h | 84 (80-317), n=49; `outpost_sources` 21 (18-74) on the snapshot, n=42; 95 (86-97) live before the first publish, n=7 | | |
+| 2026-10-24 | Import-cap margin: wildlife tables imported at first use in `outpost_needs` (`import_steps.py --save`; steps at the end of a top-level import, cap 10,000; before ran 0.01 h, imports land in the first seconds) | 0839 | import chain peak per slot | 0.1 h | automation_4 `outpost_plan` 9,622 (96.2 %); panel_7 `building_plan` 8,422 | automation_4 7,628 (76.3 %); panel_7 6,428; the wildlife modules now load in the planner's `power_plan` group (2,896) | a6c204e5 |
 
 The Vector 1 drone row's 320 (81-459) ran at debug, so it is not a "before" value for the info row.

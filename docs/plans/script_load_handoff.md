@@ -12,9 +12,9 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   (a) (`49079d2`), dropped (b); Vector 4 closed, not needed; Vector 5 closed by measurement (1 tick per call);
   Vector 6 landed (`f50ef15`, `9af116d`). [vector1_tier_snapshot_2026-10.md](done/vector1_tier_snapshot_2026-10.md)
   is closed (all boxes ticked, moved to `done/`, 2026-10-24).
-- **Import-cap margin**: nothing landed. The 9,637-step count for the `outpost_plan` chain has no committed
-  method that measures it (plan, "Vector 6" outcome, last bullet). `devtools/perf/tick_profile.py:418` only
-  explains the crash after the fact.
+- **Import-cap margin**: done 2026-10-24 (item 1 below). `devtools/perf/import_steps.py --save SAVE` measures
+  every slot's import chains and fails over 90 % of the cap; the `outpost_plan` chain went 9,622 to 7,628 steps
+  on 0839 (plan, Results, last row).
 - **More atomic work** (Harvester `publish`, demand cascade on a prefetched snapshot): not started.
 - **Centralize Smelter/Fabricator demand**: record, publisher and Smelter split landed (2026-10-11); open are
   the Fabricator split, readers, intermediate netting, headless A/B.
