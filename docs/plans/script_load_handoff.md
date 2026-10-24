@@ -10,7 +10,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 - **Planning-phase performance**: Vectors 1-6 of the plan have outcomes. Vector 1 (tier snapshot) landed
   (`aa72616`, `d35a168`); Vector 2 landed partly (`065c2a8`, 124 to 105 ticks per step); Vector 3 fixed trigger
   (a) (`49079d2`), dropped (b); Vector 4 closed, not needed; Vector 5 closed by measurement (1 tick per call);
-  Vector 6 landed (`f50ef15`, `9af116d`). [vector1_tier_snapshot_2026-10.md](vector1_tier_snapshot_2026-10.md)
+  Vector 6 landed (`f50ef15`, `9af116d`). [vector1_tier_snapshot_2026-10.md](done/vector1_tier_snapshot_2026-10.md)
   still carries 31 unchecked task boxes although its outcome rows exist: tick them from the commits, then move
   it to `done/`.
 - **Import-cap margin**: nothing landed. The 9,637-step count for the `outpost_plan` chain has no committed
