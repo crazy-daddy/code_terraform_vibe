@@ -116,12 +116,6 @@ class FeedMakerController(MachineController):
         plan = archive.get(wc.PLAN_KEY, {}) or {}
         return (plan.get("feed_demand") or {}) if isinstance(plan, dict) else {}
 
-    @staticmethod
-    def complete():
-        """True once the planner marks Wildlife complete (`plan.complete`)."""
-        plan = archive.get(wc.PLAN_KEY, {}) or {}
-        return bool(plan.get("complete")) if isinstance(plan, dict) else False
-
     def home_stock(self, recipes, demand):
         """{item_id: units} at home of every demanded feed and every recipe input, in one walk."""
         items = set(demand)
@@ -338,7 +332,7 @@ class FeedMakerController(MachineController):
     def step(self):
         curr_tick = self.get_current_tick()
         recipes = self.recipes(curr_tick)
-        if self.complete():
+        if wc.wildlife_complete():
             self._picked = None
             self._retire = self.retire_step(curr_tick)
             self.publish(recipes, "retiring" if self._retire == wc.RELEASE_EMPTYING else None, curr_tick)

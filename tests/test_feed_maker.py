@@ -329,6 +329,17 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         self.assertEqual(self.warehouse.count(self.FEED), 60)
 
 
+class WildlifeCompleteTests(harness.StubTestCase):
+    def test_reads_the_plan_complete_flag(self):
+        self.assertFalse(wc.wildlife_complete())
+        self.world.notebook.data[wc.PLAN_KEY] = {"feed_demand": {}}
+        self.assertFalse(wc.wildlife_complete())
+        self.world.notebook.data[wc.PLAN_KEY] = {"complete": True}
+        self.assertTrue(wc.wildlife_complete())
+        self.world.notebook.data[wc.PLAN_KEY] = "garbage"
+        self.assertFalse(wc.wildlife_complete())
+
+
 class RetireTests(FeedMakerTestCase):
     def setUp(self):
         super().setUp()
