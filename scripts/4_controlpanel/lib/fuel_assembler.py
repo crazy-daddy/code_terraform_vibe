@@ -43,6 +43,7 @@
 import lead_cask
 import power
 from archive import archive
+from components import components_at
 from machine_controller import MachineController, port_counts
 from parking_client import ParkRequester
 from priority import UPGRADE
@@ -147,17 +148,7 @@ class FuelAssemblerController(MachineController):
         """Components of type_id at this outpost."""
         if self.outpost is None or not hasattr(self.outpost, "buildings"):
             return []
-        try:
-            refs = self.outpost.buildings(type_id)
-        except Exception as error:
-            swallowed("fuel_assembler.FuelAssemblerController._buildings: outpost.buildings", error)
-            return []
-        out = []
-        for ref in refs or []:
-            component = get_component(getattr(ref, "id", ""))
-            if component is not None:
-                out.append(component)
-        return out
+        return components_at(self.outpost, type_id, "fuel_assembler.FuelAssemblerController._buildings: outpost.buildings")
 
     def rod_consumers(self):
         """(reactors, mk4 generators) at this outpost."""
