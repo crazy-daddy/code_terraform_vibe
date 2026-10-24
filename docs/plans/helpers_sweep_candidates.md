@@ -323,7 +323,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge**.
   - Owner `L/components.py`: `outpost_by_id(outpost_id) -> OutpostRef | None` (scan `outposts()`). `outpost_mining.outpost_by_id` becomes a one-line alias (many importers), `outpost_by_site_id` and `_construction_outpost` (`outpost_by_id(construction_site_id())`) call it; `pillar_swap._ids_at` uses it before `building_ids_at` (see "Per-outpost building ids").
   - Apart: none. Risk: low. Size: S.
-- Landed: Phase 2 (helpers-impl-2), `refactor(components): building_ids_at, outpost_by_id, components_at, sensor_value`, `refactor(components): outpost_by_site_id uses outpost_by_id, keeps home fallback` (`production_sites.outpost_by_site_id` uses `outpost_by_id`, then the home fallback).
+- Landed: Phase 2 (helpers-impl-2), `refactor(components): building_ids_at, outpost_by_id, components_at, sensor_value`, `refactor(components): outpost_by_site_id uses outpost_by_id, keeps home fallback`, then `refactor(production): outpost_by_site_id keeps its single scan`. `production_sites.outpost_by_site_id` stays apart: its `_all_outposts()` scan carries the home fallback; going through `outpost_by_id` would read the network twice on a miss.
 
 ## Components of one type at one outpost (resolve, drop None)
 - Sites:

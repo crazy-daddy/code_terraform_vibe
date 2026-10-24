@@ -88,10 +88,6 @@ class ResearchUnlockedTests(harness.StubTestCase):
         self.assertTrue(expander._unlocked("large_warehouse", "research_high_bay_warehousing"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class _RaisingOutpost:
     id = "outpost_bad"
 
@@ -172,3 +168,7 @@ class OutpostBySiteIdTests(harness.StubTestCase):
     def test_network_unreadable_other_id_is_none(self):
         self.world.services["outpost_network"] = _RaisingNetwork(self.world)
         self.assertIsNone(outpost_by_site_id("outpost_2"))
+
+
+if __name__ == "__main__":
+    unittest.main()

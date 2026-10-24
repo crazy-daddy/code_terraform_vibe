@@ -83,3 +83,4 @@ lib/bio_coastal.py::BioLuminizerController.__init__ ~ lib/bio_geothermal.py::Dna
 lib/feed_maker.py::FeedMakerController.recipes ~ lib/refiner.py::RefinerController.unlocked_recipes  # both already TickCache glue
 lib/construction_plan.py::at_priority ~ lib/construction_plan.py::ids_needing  # one list filter per field
 lib/bio_retire.py::biome_retired ~ lib/lead_cask.py::network_cask_stock  # any vs sum over the same outpost walk
+lib/components.py::sensor_value ~ lib/game_clock.py::now_tick  # safe call boilerplate, different reads
