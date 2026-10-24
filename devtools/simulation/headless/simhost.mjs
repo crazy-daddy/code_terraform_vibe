@@ -15,7 +15,7 @@ import { patchInstantBuild, patchScale } from "./anchors.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 8;
+const SHIM_VERSION = 9;
 
 // The shim reaches the simulation through minified names (core class, SimHost,
 // state load/serialize, command registry, ...) that change with every game
@@ -60,6 +60,23 @@ const __ctLastFluids = new Map();
 function __ctStickyFluid(id, caps, fluids) {
   if (fluids !== "[null,null,null]") __ctLastFluids.set(id, [caps, fluids]);
   return __ctLastFluids.get(id) ?? [caps, fluids];
+}
+// Import steps (patchImportSteps()): one record per player module body run,
+// with the evaluator's step counter before and after it. The counter counts
+// the whole slice, so a depth-1 record's after is what the cap is checked on.
+// depth counts the body runs in progress on that evaluator (1 = outermost);
+// moduleResolutionStack is no import nesting (a lazy import inside a lib
+// function already sees entries on it).
+const __ctImportSteps = [];
+function __ctImportStep(ev, fn) {
+  const before = ev.steps;
+  const depth = (ev.__ctImportDepth = (ev.__ctImportDepth ?? 0) + 1);
+  let ok = false;
+  try { fn(); ok = true; } finally {
+    ev.__ctImportDepth = depth - 1;
+    __ctImportSteps.push({ script: ev.ownSourceName, module: ev.moduleResolutionStack.at(-1) ?? null,
+      depth, before, after: ev.steps, cap: ev.stepsLimit * 10, ok });
+  }
 }
 function __ctTimedSystem(name, fn) {
   if (__ctSkipSystems.has(name)) return;
@@ -112,6 +129,7 @@ function __ctCreateHeadless(opts = {}) {
     skipSystems: __ctSkipSystems,
     setStickyFluids: v => { __ctStickyFluids = !!v; },
     setFreeDebug: v => { __ctFreeDebug = !!v; },
+    importSteps: __ctImportSteps,
     machineRevision: ${N.machineRevision ? `id => ${N.machineRevision}(core.state, id)` : "null"},
     config: ${N.config},
   };
@@ -191,6 +209,20 @@ function patchFreeDebug(src) {
   return { src: src.slice(0, found[0].index) + patched + src.slice(found[0].index + line.length) };
 }
 
+// Import steps: a player module's body runs in the evaluator's resolveModule()
+// as `this.executeModuleBodySync(<record>.body);`, synchronous and under the
+// one stepsLimit*10 cap. __ctImportStep() records the step counter around it
+// (devtools/perf/import_steps.py reads the records).
+const MODULE_BODY = /this\.executeModuleBodySync\(([\w$]+)\.body\);/g;
+
+export function patchImportSteps(src) {
+  const found = [...src.matchAll(MODULE_BODY)];
+  if (found.length !== 1) return { src, why: `module body run found ${found.length}x (want 1)` };
+  const [line, record] = found[0];
+  const patched = `__ctImportStep(this, () => this.executeModuleBodySync(${record}.body));`;
+  return { src: src.slice(0, found[0].index) + patched + src.slice(found[0].index + line.length) };
+}
+
 function patchSignature(src) {
   // Other systems push similar `m:` lines; keep the one whose last fields are
   // the caps / io / fluids / levels / content variables declared just above.
@@ -222,7 +254,7 @@ const SLOW_STEP_MS = 1000;
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false, instantBuild: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false, instantBuild: false, importSteps: false };
   const step = (label, fn) => {
     const t0 = performance.now();
     const out = fn();
@@ -284,6 +316,13 @@ export function patchSimworker(src) {
   } else {
     src = freeDebug.src;
     features.freeDebug = true;
+  }
+  const importSteps = step("MODULE_BODY", () => patchImportSteps(src));
+  if (importSteps.why) {
+    warnings.push(`${importSteps.why}: import step records are off`);
+  } else {
+    src = importSteps.src;
+    features.importSteps = true;
   }
   // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all five sites or none.
   const scale = step("SCALE_PATTERNS", () => patchScale(src));
@@ -652,6 +691,9 @@ export class Sim {
   terraformIndex() { return Number(this.state.researchRates?.terraform?.lastValue ?? 0); }
 
   systemMs() { return Object.fromEntries([...this.h.systemMs].sort((a, b) => b[1] - a[1])); }
+
+  // Player module body runs so far, oldest first (see patchImportSteps()).
+  importSteps() { return [...this.h.importSteps]; }
 
   #ok(r, what) {
     if (!r.ok) throw new Error(`${what} failed: ${r.error ?? JSON.stringify(r)}`);
