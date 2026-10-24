@@ -14,7 +14,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   is closed (all boxes ticked, moved to `done/`, 2026-10-24).
 - **Import-cap margin**: done 2026-10-24 (item 1 below). `devtools/perf/import_steps.py --save SAVE` measures
   every slot's import chains and fails over 90 % of the cap; the `outpost_plan` chain went 9,622 to 7,628 steps
-  on 0839 (plan, Results, last row).
+  on 0839 (plan, Results, 2026-10-24 "Import-cap margin" row).
 - **More atomic work** (Harvester `publish`, demand cascade on a prefetched snapshot): not started.
 - **Centralize Smelter/Fabricator demand**: record, publisher and Smelter split landed (2026-10-11); open are
   the Fabricator split, readers, intermediate netting, headless A/B.
