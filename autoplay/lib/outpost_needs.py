@@ -4,7 +4,9 @@
 #
 # Input is one plain snapshot (snapshot() reads it in game; tests build it):
 #   {"outposts": [{"id", "x", "y", "biome", "home", "roles": [designated],
-#                  "types": {type_id: n}, "used", "capacity"}],
+#                  "types": {type_id: n}, "used", "capacity",
+#                  "observed": covered_roles() of types and biome (optional;
+#                  snapshot() adds it, covers() computes it without)}],
 #    "kits": set of available kit ids (autoplay_roles.unlocked()),
 #    "bio_orders": {biome: open Bio Orders},
 #    "essences_required": Biomass phase minimum (None without a Mixer),
@@ -165,9 +167,61 @@ def covers(entry, role):
     """True when the outpost designates `role` or its buildings make it up in the right biome."""
     if role in entry.get("roles", []):
         return True
+    built = entry.get("observed")
+    if built is not None:
+        return role in built
+    return _built_covers(role, entry.get("types", {}), entry.get("biome"))
+
+
+def _built_covers(role, types, biome):
+    """covers() by the buildings alone: family sub-roles only when biome-locked."""
     if role.startswith(autoplay_roles.FAMILY_PREFIXES) and role_flag(role, "biome") is None:
         return False
-    return observed(role, entry.get("types", {})) and biome_ok(role, entry.get("biome"))
+    return observed(role, types) and biome_ok(role, biome)
+
+
+def covered_roles(types, biome):
+    """
+    Sorted catalog roles the buildings in `types` cover at `biome` (the entry's
+    "observed" list): covers() reads it instead of walking the role's building
+    groups on every call, about 200 calls per pass on a mid-game save. Only the
+    roles listed under a built type (_roles_by_type()) are checked.
+    """
+    index = _roles_by_type()
+    names = set()
+    for type_id, count in types.items():
+        if count > 0:
+            names.update(index.get(type_id, ()))
+    return sorted(name for name in names if _built_covers(name, types, biome))
+
+
+_ROLES_BY_TYPE = {}  # type_id -> catalog roles with it in a building group (family sub-roles without a biome lock left out); filled at first use
+
+
+def _roles_by_type():
+    """
+    _ROLES_BY_TYPE, filled on the first call: a role the buildings cover has
+    every group built, so it is listed under one of the built types, and
+    covered_roles() checks only those instead of the ~60 catalog roles.
+    """
+    if not _ROLES_BY_TYPE:
+        for name in autoplay_roles.ROLE_CATALOG:
+            if name.startswith(autoplay_roles.FAMILY_PREFIXES) and role_flag(name, "biome") is None:
+                continue
+            for group in autoplay_roles.building_groups(name):
+                for type_id in group:
+                    listed = _ROLES_BY_TYPE.setdefault(type_id, [])
+                    if name not in listed:
+                        listed.append(name)
+    return _ROLES_BY_TYPE
+
+
+def _observed_roles(entry):
+    """observed_roles() of the entry's buildings and biome, from its "observed" list when present."""
+    built = entry.get("observed")
+    if built is None:
+        return observed_roles(entry.get("types", {}), entry.get("biome"))
+    return [name for name in built if not name.startswith(autoplay_roles.FAMILY_PREFIXES)]
 
 
 def hosts(role, outposts):
@@ -365,7 +419,7 @@ def needs(snap):
 
 def _current_roles(entry):
     roles = list(entry.get("roles", []))
-    for name in observed_roles(entry.get("types", {}), entry.get("biome")):
+    for name in _observed_roles(entry):
         if name not in roles:
             roles.append(name)
     return roles
@@ -550,7 +604,7 @@ def undesignated_item(entry, open_needs, hosted, snap):
     """
     refused = snap.get("refused", [])
     phase = snap.get("phase") or {}
-    adopted = [name for name in observed_roles(entry.get("types", {}), entry.get("biome")) if [name, entry["id"]] not in refused and not autoplay_roles.retired(name, phase)]
+    adopted = [name for name in _observed_roles(entry) if [name, entry["id"]] not in refused and not autoplay_roles.retired(name, phase)]
     candidates = [need for need in open_needs if not need.get("locked") and need["role"] not in hosted]
     ores = _ores_in_reach(entry, snap)
     if ores and "mining" not in hosted and "mining" not in (snap.get("refused_roles") or []) and unlocked("mining", snap.get("kits", set())):
@@ -804,6 +858,8 @@ def snapshot():
     phase = game_phase.snapshot(now_tick("outpost_needs.snapshot"))
     roles_map = {oid: [name for name in autoplay_roles.role_list(roles) if not autoplay_roles.retired(name, phase)] for oid, roles in autoplay_roles.outpost_roles().items()}
     outposts = read_outposts(roles_map)
+    for entry in outposts:
+        entry["observed"] = covered_roles(entry["types"], entry["biome"])
     sites = surveyed_sites()
     fluids = run_batched(fluid_sites, sites, SITE_CHUNK)
     role_presets = autoplay_roles.presets()

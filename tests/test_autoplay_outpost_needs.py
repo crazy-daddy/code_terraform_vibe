@@ -85,6 +85,22 @@ class NeedTests(unittest.TestCase):
         self.assertTrue(on.covers(deep, "weather_deep"))
         self.assertTrue(on.covers(outpost("o", "deep", types={"refiner": 1}), "refinery"))
 
+    def test_observed_list_matches_the_building_walk(self):
+        builds = [
+            {},
+            {"weather_station": 1, "liquid_tank": 2, "refiner": 1},
+            {"habitat": 1, "warehouse": 1, "smelter": 1},
+            {"bio_collector": 1, "bio_lab": 1, "bio_exchange": 1, "bio_caster": 1, "steam_turbine": 1},
+        ]
+        names = list(roles.ROLE_CATALOG) + ["not_a_role"]
+        for biome in ("deep", "volcanic", "frozen"):
+            for types in builds:
+                plain = outpost("o", biome, types=types)
+                listed = dict(plain, observed=on.covered_roles(types, biome))
+                for name in names:
+                    self.assertEqual(on.covers(listed, name), on.covers(plain, name), (biome, types, name))
+                self.assertEqual(on._observed_roles(listed), roles.observed_roles(types, biome))
+
     def test_bio_orders_without_chain_are_now(self):
         needs = on.needs(snap([HOME], bio_orders={"coastal": 2, "frozen": 1}))
         self.assertEqual(roles_of(needs, "now"), ["bio_coastal", "bio_frozen"])
