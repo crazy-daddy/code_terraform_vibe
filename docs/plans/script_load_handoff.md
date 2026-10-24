@@ -25,8 +25,10 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 
 ## Open measurements the plan names
 
-- `OutpostPlanner._replan` costs 276 ticks on save 0839 outside `_rank` (likely `snapshot`, `needs` or
-  `plan_hosts`); the coarse filter ~155 ticks, and `FILTER_CHUNK` cannot grow (dense-pipe worst case 3355 ops).
+- `OutpostPlanner._replan` outside `_rank` on 0839: done 2026-10-24 (item 3 below), 269 to 190 ticks; the cost
+  sat in `covers()` / `observed_roles()` walks under `plan_hosts` and `needs` (plan, Results, last row). Left:
+  `hosts()` scans per need in `needs()`, `_ores_in_reach` (~30 wrapped ticks). The coarse filter ~155 ticks, and
+  `FILTER_CHUNK` cannot grow (dense-pipe worst case 3355 ops).
 - ~~`drone_haul_plan.outpost_sources` stays ~95 ticks after Vector 1.~~ Closed by measurement (2026-10-24,
   plan "Results"): ~95 is the live path before the first snapshot publish (7 of 49 picks); on the snapshot it
   costs ~21 of an 84-tick plan. Debug logging as a whole costs the drone plan ~93 ticks per call.
@@ -48,6 +50,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 2. ~~**Vector 1 plan bookkeeping**~~: done 2026-10-24.
 3. **`_replan` outside `_rank`** (one session): profile with the Vector 6 command, find which of `snapshot`,
    `needs`, `plan_hosts` carries the 276 ticks, then the usual hoist or slice. Rankings are pinned by a test.
+   Done 2026-10-24: `snapshot()` stores each outpost's covered roles once; 269 to 190 ticks.
 4. ~~**`outpost_sources`**~~: closed by measurement 2026-10-24, no code (plan "Results" row).
 5. **More atomic work** only after 1-4, and only with a measured target: the plan's "Do not pursue" list shows
    how often an unmeasured item turned out to cost nothing.
