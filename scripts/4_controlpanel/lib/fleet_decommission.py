@@ -132,7 +132,11 @@ class FleetDecommissionCoordinator:
         return vehicles, drones
 
     def _depot_ids(self):
-        return {d["id"] for d in discover_drone_depots()}
+        try:
+            return {d["id"] for d in discover_drone_depots()}
+        except Exception as error:
+            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: outpost.buildings", error)
+            return set()
 
     def _cargo_count(self, machine_id):
         machine = component(machine_id)

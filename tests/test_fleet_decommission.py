@@ -145,6 +145,10 @@ class DecommissionTests(DecommissionTestCase):
         w.add_drone_depot("depot_3", far, "drone_station_medium").ref_position = [6.0, 6.0]
         self.assertEqual(self.coordinator._depot_ids(), {"depot_1", "depot_2", "depot_3"})
 
+    def test_depot_ids_empty_when_discovery_raises(self):
+        with mock.patch.object(fleet_decommission, "discover_drone_depots", side_effect=RuntimeError("boom")):
+            self.assertEqual(self.coordinator._depot_ids(), set())
+
     def test_fatal_refusal_blocks_after_max_attempts(self):
         self.computer.forced_status = "not_undeployable"
         fleet_decommission.request_decommission("pioneer_1", "pioneer")
