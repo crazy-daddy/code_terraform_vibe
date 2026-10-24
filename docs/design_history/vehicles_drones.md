@@ -238,3 +238,7 @@ Spec: `docs/plans/dynamic_roles/mission_pool.md`.
 - **Refused (`inventory_full`, `cargo_present`, ...).** Decommission keeps its restart and the `requested` state:
   the script runs its prepare step again (a Pioneer sells more parts to free slots; a vehicle that took cargo
   unloads), which the coordinator cannot do itself. The drone swap needs no script for a retry, so it stays stopped.
+- **`inventory_full` is a refusal.** It restarts like the other refusals because the Pioneer reruns its sell-parts prep to free
+  slots, unlike the drone swap. It does not count toward `MAX_UNDEPLOY_ATTEMPTS`.
+- **A failed call waits unbounded.** It never counts toward `MAX_UNDEPLOY_ATTEMPTS` (the `building_ops` rule), so a machine
+  whose undeploy call fails every pass stays stopped and recalled until the call works.
