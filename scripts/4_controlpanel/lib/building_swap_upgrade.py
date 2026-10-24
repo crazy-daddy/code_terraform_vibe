@@ -31,7 +31,6 @@ from components import building_ids_at, component, outpost_by_id, research_unloc
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
-from swallow import swallowed
 from tree_console import TreeConsole
 
 MAX_ATTEMPTS = 5  # refused undeploy/connect answers in a row before "blocked"
@@ -86,12 +85,7 @@ class BuildingSwapUpgrader:
         return building_ids_at(outpost, type_id, f"{self.MODULE}._ids_of: outpost.buildings")
 
     def _credits(self):
-        commander = self._component("commander")
-        try:
-            return int(commander.get_credits()) if commander else 0
-        except Exception as error:
-            swallowed(f"{self.MODULE}._credits: commander.get_credits", error)
-            return 0
+        return cash.balance()
 
     def _price(self):
         return cash.shop_prices().get(self.LARGE_TYPE_ID, self.LARGE_PRICE_FALLBACK)
