@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from drone_energy import ENERGY_MODULE_CAPACITY, TARGET_RANGE_M, energy_modules_needed, loadout_range_m
-from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS, best_tier
 from priority import MANUAL
 from storage import inventory_count
 from swallow import swallowed
@@ -289,17 +289,11 @@ class DroneUpgradeMixin:
         return []
 
     def _best_in_inventory(self, ladder):
-        for item_id in reversed(ladder):
-            if inventory_count(item_id) > 0:
-                return item_id
-        return None
+        return best_tier(ladder, lambda item_id: inventory_count(item_id) > 0)
 
     def _best_obtainable(self, ladder, unlocked):
         """Highest tier the Fabricator can build or Inventory already holds."""
-        for item_id in reversed(ladder):
-            if item_id in unlocked or inventory_count(item_id) > 0:
-                return item_id
-        return None
+        return best_tier(ladder, lambda item_id: item_id in unlocked or inventory_count(item_id) > 0)
 
     def _read_slots(self):
         """{slot_index: module_id or None} from drone.modules() (0 = thruster), or None if unreadable."""

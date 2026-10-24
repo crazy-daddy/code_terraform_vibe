@@ -27,7 +27,7 @@ import logistics_requests
 import outpost_mining
 from archive import archive
 from components import all_research_unlocked, research_unlocked
-from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, can_cut
+from item_tiers import BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, DRILL_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, SONAR_TIERS, best_mounted, best_tier, can_cut
 from parking_client import resume_vehicle
 from pioneer_split import best_holder_count, split_cost
 from swallow import swallowed
@@ -226,10 +226,7 @@ class PioneerUpgradeMixin:
 
     def _top_tier(self, tiers, catalogue, mounted_ids):
         """Best tier the Shop sells, else the best one already mounted, else None."""
-        for item_id in reversed(tiers):
-            if item_id in catalogue or item_id in mounted_ids:
-                return item_id
-        return None
+        return best_tier(tiers, lambda item_id: item_id in catalogue or item_id in mounted_ids)
 
     def _split_sites(self):
         """
