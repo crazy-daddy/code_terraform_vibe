@@ -143,6 +143,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Sites merged (8): both `read_prices`, `_prices`, `_catalogue` (gains `int()`), `kit_price` (`shop_price(KIT_ID)`), both `_price`, `harvester_machines.shop_price` (becomes the helper or an alias).
   - Apart: none.
   - Risk: low. Size: M (8 sites, 2 helpers).
+- Landed: Phase 2 (helpers-impl-2), `refactor(cash): shop_prices helper, shop_price reads through it`, `refactor(cash): control-panel shop price sites onto shop_prices`, `refactor(cash): shop_price default None, autoplay sites onto shop_prices`. Autoplay `read_prices` (x2) and `outpost_plan.kit_price` call `cash.shop_prices()` (fresh read: kit cost rises per kit owned); cached `shop_price` callers pass `fallback=0`.
 
 ## Bio flush then sleep, and run loops
 - Sites:
@@ -207,6 +208,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Sites by shape: set one -> `set_entry`: fleet_status.publish :145, vehicle_claims :347, outpost_mining :170, turbine_commit :296; pop one -> `pop_entry`: fleet_status.forget :171; set-or-pop -> `set_flagged`-style, keep as `mutate` or `set_entry`/`pop_entry` branch: fleet_claims_common :40 (stays, it is the helper), production_orders :333, supply_dock :220, biomass_mixer_gate :224, pioneer_upgrade :91/:102 (see "Sport-nav request flag"); pop many -> `pop_entries`: autoplay_roles :401, blueprint_queue :87/:285, construction_lots :32/:146, parking_client :109, retired_machines :61, archive_cleaner :282 (its `still_stale` re-check variant keeps `mutate`); set many or mixed -> `mutate`: blueprint_queue :50/:61, seed_maker :212, script_parking :444, turbine_commit :308, cash :261, building_ops :171/:255, fleet_upgrade :480; nested sections via their module wrapper (next family): fleet_upgrade :312, fleet_decommission :318.
   - Apart: fabricator :713, smelter :331, fluid_routing :242, lead_cask :298 (prune then set, see "Stale-stamp prune then set"); `set_entry`/`pop_entry` themselves.
   - Risk: medium (archive writes on ~30 keys; each swap is mechanical but needs its caller's test or a live check). Size: L.
+- Landed: Phase 2 (helpers-impl-2), `refactor(archive): add mutate, pop_entries, dict_entry`, then the set-one, pop-one, pop-many, set-many/mixed and set-or-pop batches (`refactor(archive): ... onto mutate/pop_entries/set_entry/pop_entry`). Apart as planned: fabricator, smelter, fluid_routing, lead_cask (prune then set). `seed_maker._mark_tried` keeps a `self._tried` assignment inside its fn (`mutate` does not return state).
 
 ## Keyed-state mutate wrapper (identical bodies)
 - Sites: `L/drone_upgrade.py:124 update_fleet_upgrade` (updater :127), `L/fleet_decommission.py:76 _update` (:77), `L/pillar_swap.py:81 _update` (:82), `L/pioneer_commission.py:83 update_commission` (:86)
@@ -216,6 +218,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge** into `ArchiveClient.mutate(key, fn)` (previous family).
   - The four wrappers become `return archive.mutate(KEY, mutate)` (keep the two public names, `update_fleet_upgrade` and `update_commission`, as one-line aliases; the two private `_update` go).
   - Apart: none. Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(archive): keyed-state wrappers, entry lookups, patches onto mutate/dict_entry`.
 
 ## Archive sub-entry lookup and patch
 - Sites: lookup `L/drone_upgrade.py:215 drone_swap_entry`, `:220 lineage_entry`, `L/pioneer_commission.py:95 lineage_entry`, `L/fleet_decommission.py:71 decommission_entry`, `L/fleet_status.py:162 get`; patch `L/building_ops.py:252 _patch` (stamps `tick`, `archive.transaction` directly), `L/fleet_decommission.py:189 FleetDecommissionCoordinator._patch`, `L/pillar_swap.py:95 _patch_job`; requested-state `L/building_ops.py:161 retire_requested`, `L/fleet_decommission.py:118 is_decommission_requested`
@@ -227,6 +230,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Patches: `building_ops._patch`, `fleet_decommission._patch`, `pillar_swap._patch_job` each become a three-line `archive.mutate(KEY, fn)` (building_ops keeps its `tick` stamp inside `fn`). The two requested-state tests stay (two lines each, different keys).
   - Apart pairs: `lib/building_ops.py::retire_requested ~ lib/fleet_decommission.py::is_decommission_requested`.
   - Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(archive): keyed-state wrappers, entry lookups, patches onto mutate/dict_entry`.
 
 ## try around archive.get (double guard)
 - Sites: `L/machine_activity.py:213 _read_dict`, `L/retired_machines.py:20 retired`, `L/script_parking.py:807 stored` (try around `get(key, {}) or {}`), `L/construction_lots.py:43 read_priorities`, `:52 read_hold` (try around a cleaner call)
@@ -288,6 +292,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Sites merged (6 defs, ~30 call sites): the four getattr `_call`/`_read`, `building_plan._safe`, `outpost_needs._call`.
   - Apart: `builder_automation.run_step` (reports to the AUTOMATION card, not the log).
   - Risk: low. Size: M.
+- Landed: Phase 2 (helpers-impl-2), `feat(swallow): safe_call thunk helper`, `refactor(swallow): controlpanel getattr readers onto safe_call`, `refactor(swallow): autoplay thunk readers onto safe_call`. `builder_automation.run_step` stays apart per spec. The four getattr-by-name sites pass `lambda: getattr(obj, m)()`, not a bound method (a bound method would let AttributeError escape the guard); the named wrappers stay as one-line calls.
 
 ## Sensor value read
 - Sites: `L/biomass_retire.py:61 biomass_tons` (0.0), `L/plant_terraformer_common.py:45 plants_km2` (None), `L/wildlife_planner.py:957 _population` (None)
@@ -297,6 +302,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge**.
   - Owner `L/components.py`: `sensor_value(sensor_id, where) -> float | None` (None without a sensor or on a raised read). `biomass_tons` = `sensor_value("biomass_sensor", ...) or 0.0`; the other two return it as is.
   - Apart: none. Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(components): sensor reads use sensor_value`.
 
 ## Network outposts list guard
 - Sites: `L/drone_kit_stock.py:24 _outposts`, `L/lead_cask.py:70 _all_outposts`, `L/site_supply.py:174 _outposts`, `L/building_swap_upgrade.py:89 BuildingSwapUpgrader._outposts`, `L/pillar_swap.py:160 PillarSwap._outposts`, `L/storage_expand.py:61 StorageExpander._outposts`, `L/drone_haul_plan.py:138 outposts_by_id` (dict), `L/fleet_upgrade.py:133 FleetUpgradeCoordinator._drones` (fleet as id dict), `L/production_core.py:131 _all_outposts` (falls back to `[home]`), `L/production_source.py:153 SourceCache.outposts` (memo of the former); the prologues of `L/fleet_upgrade.py:106`, `L/fleet_decommission.py:146`, `L/commission_card.py:47`, `L/charging.py:27`, `L/charging_stations.py:43`, `L/wildlife_planner.py:578`, `L/weather_signals.py:97` (unguarded), `L/drone_depots.py:150`, `ap/outpost_needs.py:641 :663`, `ap/building_plan.py:385`, `ap/focus_plan.py:215`, `ap/extractor_plan.py:119`, `ap/blueprint_queue.py:25`
@@ -317,6 +323,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge**.
   - Owner `L/components.py`: `outpost_by_id(outpost_id) -> OutpostRef | None` (scan `outposts()`). `outpost_mining.outpost_by_id` becomes a one-line alias (many importers), `outpost_by_site_id` and `_construction_outpost` (`outpost_by_id(construction_site_id())`) call it; `pillar_swap._ids_at` uses it before `building_ids_at` (see "Per-outpost building ids").
   - Apart: none. Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(components): building_ids_at, outpost_by_id, components_at, sensor_value`, `refactor(components): outpost_by_site_id uses outpost_by_id, keeps home fallback` (`production_sites.outpost_by_site_id` uses `outpost_by_id`, then the home fallback).
 
 ## Components of one type at one outpost (resolve, drop None)
 - Sites:
@@ -331,6 +338,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Owner `L/components.py`: `components_at(outpost, type_id) -> list` (unmemoized; `[]` for None; the resolved components, None dropped). lead_cask and fuel_assembler swap; `storage._items_demanded_by_active_dock_orders` can use it too (components is a leaf, no cycle).
   - Apart: `bio_orders.local_sibling` (first match, its own debug block) and `drone_depot._find_local_liquifier` (exactly-one rule with a warning) keep their rule; both may call `components_at` for the list, optional.
   - Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(components): lead_cask and fuel_assembler use components_at`.
 
 ## Per-outpost building ids of one type (no resolve)
 - Sites:
@@ -347,6 +355,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Owner `L/components.py`: `building_ids_at(outpost, type_id) -> list[str]` (sorted, empty ids dropped, `[]` on a raised walk). The swap sites keep their freshness; `building_ops._ids_at` keeps its None-when-unreadable by testing the outpost first; `pillar_swap._machines` = `sorted((o.id, b) for o in outposts() for b in building_ids_at(o, type_id))`.
   - Apart: `steam_condenser.sink_draining_target` (resolves and filters on live port state); `water_sink._water_duty` may use the helper (True on an empty list stays its rule).
   - Risk: low. Size: M (6 sites).
+- Landed: Phase 2 (helpers-impl-2), `refactor(components): building_ids_at, outpost_by_id, components_at, sensor_value`, `refactor(components): outpost id lookups use outpost_by_id and building_ids_at`. Apart: `building_ops._ids_at` (None when unreadable vs `[]`; `[]` would misread machines as new) and `feed_maker._read_habitat_ids` (order-sensitive: `storage_unload.push_to_targets` takes targets in order of preference); the `storage` dock walk also stays (swallowing `component()` plus empty-id skip).
 
 ## Storage stores
 - Sites: `L/site_evict.py:176 storage_outposts` (type set at :186: STORAGE_TYPE_IDS and DEPOT_TYPE_TIERS and no PENALIZED_TYPES)
@@ -397,20 +406,22 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **keep**: tier 0 cannot import tier 4; no tier-0 lib exists and three walks do not justify one. Apart pairs: `power/solar.py::get_master_solar_id ~ power/solar.py::get_building_ids` (tier 0, nolib).
 
 ## _dist(ax, ay, bx, by) copies
-- Sites: `ap/outpost_needs.py:198 _dist`, `ap/outpost_plan.py:96 _dist`, `ap/outpost_sites.py:167 _dist` (21 call sites in the three files), inline `ap/outpost_sites.py:814` and `:851` (comments say "_dist() inlined"), `L/geometry.py:4 distance(a, b)` (tuples), `L/site_evict.py:195 _distance(a, b)` (wraps `geometry.distance`; 0.0 on None). Not copies: `ap/outpost_sites.py:171 _rect_dist`, `ap/grid_geom.py:221` (Manhattan).
+- Sites: `ap/outpost_needs.py:198 _dist`, `ap/outpost_plan.py:96 _dist`, `ap/outpost_sites.py:167 _dist` (13 call sites in the three files), inline `ap/outpost_sites.py:814` and `:851` (comments say "_dist() inlined"), `L/geometry.py:4 distance(a, b)` (tuples), `L/site_evict.py:195 _distance(a, b)` (wraps `geometry.distance`; 0.0 on None). Not copies: `ap/outpost_sites.py:171 _rect_dist`, `ap/grid_geom.py:221` (Manhattan).
 - Rule: `sqrt((ax-bx)^2 + (ay-by)^2)` metres, no clamping.
 - Differences: arg shape (4 scalars vs 2 tuples); `** 2`/`** 0.5` vs `dx*dx`/`sqrt` (same up to rounding); None handling only in `site_evict._distance`.
 - Found by: D
 - Verdict: **merge**.
-  - Owner `L/geometry.py` (imports nothing, so the planner chain pays nothing): add `dist(ax, ay, bx, by) -> float` beside `distance(a, b)`; the three `_dist` defs go and their 21 call sites import `dist` (no tuple packing in the batched scoring loops). Autoplay imports script libs (`outpost_plan` imports `cash`, `components`, `priority` already).
+  - Owner `L/geometry.py` (imports nothing, so the planner chain pays nothing): add `dist(ax, ay, bx, by) -> float` beside `distance(a, b)`; the three `_dist` defs go and their 13 call sites import `dist` (no tuple packing in the batched scoring loops). Autoplay imports script libs (`outpost_plan` imports `cash`, `components`, `priority` already).
   - Apart: the two inlined sites (step budget, per their comments); `site_evict._distance` (None rule).
   - Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(geometry): add dist(ax, ay, bx, by)`, `refactor(autoplay): outpost modules use geometry.dist`. The real call count is 13 in the three files (not 21). Apart as planned: the two inlined sites and `site_evict._distance`.
 
 ## Game clock tick copies
 - Sites: `ap/building_plan.py:94 _tick`, `ap/outpost_plan.py:510 _tick`, `ap/planner_loop.py:36 _tick`, `ap/power_survey.py:44 _now_tick`; canonical `L/game_clock.py:36 now_tick(where)`
 - Rule: current tick via the clock component; 0 if unreadable; `swallowed` on error.
 - Found by: A
 - Verdict: **merge**: the four copies import `game_clock.now_tick` (outpost_needs and building_plan import game_clock already). Apart: none. Risk: low. Size: S.
+- Landed: Phase 2 (helpers-impl-2), `refactor(autoplay): tick copies call game_clock.now_tick`. The four one-line `_tick`/`_now_tick` wrappers stay (3-6 callers each), labels unchanged.
 
 ## Stale-stamp prune then set
 - Sites: `L/fabricator.py:713 FabricatorController.publish_wants.updater`, `L/smelter.py:331 SmelterController.publish_want.updater`, `L/fluid_routing.py:242 yield_pipe_conflict.updater` (via `_prune_conflicts`), `L/lead_cask.py:298 set_inbound.updater` (via `_live_inbound`); canonical `L/archive.py:141 ArchiveClient.publish_status(key, name, entry, tick, log, stale_ticks)`
@@ -446,7 +457,7 @@ Drift-bugs first, then merges by sites saved over risk; `keep` families are not 
 9. merge `components.building_ids_at` (6 sites, risk low).
 10. merge keyed-state wrappers and sub-entry lookups on `archive.mutate` / `dict_entry` (9 sites, risk low).
 11. merge `components.outpost_by_id` (3 sites) and `components_at` (2 sites) and `sensor_value` (3 sites), risk low.
-12. merge `geometry.dist` (3 defs, 21 call sites) and `game_clock.now_tick` (4 defs), risk low.
+12. merge `geometry.dist` (3 defs, 13 call sites) and `game_clock.now_tick` (4 defs), risk low.
 13. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
 14. merge (2) small families marked merge: `item_tiers.best_tier` (4), pickup ledger totals (3), `parking_client.is_shedded` (4), `priority.ladder_totals` (2), `field_layout.rc_to_sector` (1 + 3 constants), `geometry.ceil_int` (1), `next_sleep` (1), `_category_ladder` (1), `wildlife_complete` (1), lazy fail dicts (2), `_raise_target` (4), cleaner fleet prune (1), building type counts (3); all S, risk low.
 15. merge the remaining S singles: `cash.balance` in building_swap_upgrade, `components.component(where)`, charging `all_stations`, `coords_of`, water tanks, `network_habitats`, sport-nav flags, `publish_status` for wants, `CASCADE_MAX_DEPTH`, `dock_order_prios` pair.

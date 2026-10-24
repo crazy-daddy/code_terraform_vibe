@@ -70,6 +70,15 @@ so step 2 is needed.
 | `unsupported_markers.merge_unsupported()` / `key_tile()` (2026-10-24) | fleet and cleaner folds of the legacy blacklists (fleet kept raw `X:Y` keys, pioneer won collisions) | helpers-impl-1 |
 | `components.research_unlocked()` / `all_research_unlocked()` (2026-10-24) | 12 research unlock guards | helpers-impl-1 |
 | `components.outposts()` (2026-10-24) | 6 `_outposts` / `_all_outposts` copies, 13 network-list prologues (`weather_signals` stays apart) | helpers-impl-1 |
+| `archive.mutate()` / `pop_entries()` / `dict_entry()` (2026-10-24) | ~30 transaction updaters that coerced non-dict to `{}` themselves, 4 keyed-state wrappers, 5 sub-entry lookups, 3 patch helpers (fabricator, smelter, fluid_routing, lead_cask prune-then-set and `seed_maker._mark_tried` stay apart) | helpers-impl-2 |
+| `swallow.safe_call()` (2026-10-24) | 6 guarded getattr-by-name / thunk wrappers (`builder_automation.run_step` stays apart) | helpers-impl-2 |
+| `cash.shop_prices()` / `shop_price()` (2026-10-24) | 8 shop catalogue price reads | helpers-impl-2 |
+| `components.building_ids_at()` (2026-10-24) | per-outpost building id walks (`building_ops._ids_at`, `feed_maker._read_habitat_ids` stay apart) | helpers-impl-2 |
+| `components.outpost_by_id()` (2026-10-24) | outpost-by-id scans in outpost_mining, production_sites, blueprint_queue, pillar_swap | helpers-impl-2 |
+| `components.components_at()` (2026-10-24) | `lead_cask._components_at`, `fuel_assembler._buildings` | helpers-impl-2 |
+| `components.sensor_value()` (2026-10-24) | 3 sensor value reads | helpers-impl-2 |
+| `geometry.dist()` (2026-10-24) | 3 `_dist(ax, ay, bx, by)` copies, 13 call sites | helpers-impl-2 |
+| `game_clock.now_tick` callers (2026-10-24) | 4 `_tick` / `_now_tick` autoplay copies | helpers-impl-2 |
 
 ## Open candidates
 Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. Ranked `drift-bug` and `merge` families, best first (details and sites in the files; implementation plan: [helpers_sweep_impl.md](helpers_sweep_impl.md)):
