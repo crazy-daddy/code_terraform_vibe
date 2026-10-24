@@ -13,9 +13,9 @@ from swallow import swallowed
 ORDER_PRIO_KEY = "supply_dock.order_prio"
 
 
-def dock_order_prios():
-    """{order_id: prio} from ORDER_PRIO_KEY; an order without an entry ranks at the ORDER band's floor."""
-    stored = archive.get(ORDER_PRIO_KEY, {})
+def dock_order_prios(key=ORDER_PRIO_KEY):
+    """{order_id: prio} from `key` (ORDER_PRIO_KEY, or supply_dock's operator override key); an order without an entry ranks at the ORDER band's floor."""
+    stored = archive.get(key, {})
     if not isinstance(stored, dict):
         return {}
     return {order_id: clamp(prio) for order_id, prio in stored.items() if isinstance(prio, (int, float))}

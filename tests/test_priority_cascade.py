@@ -166,6 +166,14 @@ class HaulRankTests(StubTestCase):
 
 
 class DockOverrideTests(StubTestCase):
+    def test_dock_order_prios_reads_the_given_key(self):
+        self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, {"o1": 850, "bad": "x"})
+        self.world.notebook.set(production_docks.ORDER_PRIO_KEY, {"o2": 300})
+        self.assertEqual(production_docks.dock_order_prios(supply_dock.PRIORITY_OVERRIDE_KEY), {"o1": 850})
+        self.assertEqual(production_docks.dock_order_prios(), {"o2": 300})
+        self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, "junk")
+        self.assertEqual(production_docks.dock_order_prios(supply_dock.PRIORITY_OVERRIDE_KEY), {})
+
     def test_override_wins_over_score(self):
         order = SimpleNamespace(id="o1")
         self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, {"o1": 850})
