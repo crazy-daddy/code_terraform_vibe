@@ -78,18 +78,8 @@ def swap_state():
     return state if isinstance(state, dict) else None
 
 
-def _update(mutate):
-    def updater(state):
-        if not isinstance(state, dict):
-            state = {}
-        mutate(state)
-        return state
-
-    archive.transaction(SWAP_KEY, {}, updater)
-
-
 def _patch(**fields):
-    _update(lambda s: s.update(fields))
+    archive.mutate(SWAP_KEY, lambda s: s.update(fields))
 
 
 def _patch_job(**fields):
@@ -98,7 +88,7 @@ def _patch_job(**fields):
         if isinstance(job, dict):
             job.update(fields)
 
-    _update(mutate)
+    archive.mutate(SWAP_KEY, mutate)
 
 
 def is_running():
@@ -346,7 +336,7 @@ class PillarSwap:
             s.setdefault("failed", []).append(old_id)
             s["job"] = None
 
-        _update(skip)
+        archive.mutate(SWAP_KEY, skip)
         self.log.level("warn").print(f"[pillar_swap] undeploy('{old_id}') refused {attempts}x ({status}); left running, skipped.")
         return f"{old_id}: skipped ({status})"
 
@@ -433,6 +423,6 @@ class PillarSwap:
             s["left"] = max(0, int(s.get("left") or 0) - 1)
             s["job"] = None
 
-        _update(finish)
+        archive.mutate(SWAP_KEY, finish)
         self.log.debug(f"[pillar_swap] Swap done: '{job['old_id']}' -> '{new_id}' (Mk {tier}).")
         return f"{job['old_id']} -> {new_id} done"

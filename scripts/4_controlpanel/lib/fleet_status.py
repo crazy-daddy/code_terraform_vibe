@@ -160,8 +160,7 @@ def get_all():
 
 def get(name):
     """Returns name's last published telemetry dict, or None."""
-    entry = get_all().get(name)
-    return entry if isinstance(entry, dict) else None
+    return archive.dict_entry(FLEET_STATUS_KEY, name)
 
 
 def forget(name):

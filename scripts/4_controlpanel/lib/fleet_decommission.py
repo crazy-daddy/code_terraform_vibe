@@ -69,18 +69,7 @@ def decommission_state():
 
 
 def decommission_entry(machine_id):
-    entry = decommission_state().get(machine_id)
-    return entry if isinstance(entry, dict) else None
-
-
-def _update(mutate):
-    def updater(state):
-        if not isinstance(state, dict):
-            state = {}
-        mutate(state)
-        return state
-
-    archive.transaction(DECOMMISSION_KEY, {}, updater)
+    return archive.dict_entry(DECOMMISSION_KEY, machine_id)
 
 
 def _set_recalled(machine_id, kind, on):
@@ -92,7 +81,7 @@ def _set_recalled(machine_id, kind, on):
 
 def request_decommission(machine_id, kind):
     """Card button: queue machine_id ("pioneer", "rover" or "drone") for retirement and recall it."""
-    _update(lambda s: s.update({machine_id: {"kind": kind, "state": "requested", "attempts": 0}}))
+    archive.mutate(DECOMMISSION_KEY, lambda s: s.update({machine_id: {"kind": kind, "state": "requested", "attempts": 0}}))
     _set_recalled(machine_id, kind, True)
     resume_vehicle(machine_id, "retire requested")
 
@@ -100,7 +89,7 @@ def request_decommission(machine_id, kind):
 def cancel_decommission(machine_id):
     """Card button, second press: drop the request and clear the recall."""
     entry = decommission_entry(machine_id)
-    _update(lambda s: s.pop(machine_id, None))
+    archive.pop_entry(DECOMMISSION_KEY, machine_id)
     _set_recalled(machine_id, (entry or {}).get("kind"), False)
 
 
@@ -112,7 +101,7 @@ def mark_decommission_ready(machine_id):
         if isinstance(entry, dict) and entry.get("state") == "requested":
             entry["state"] = "ready"
 
-    _update(mutate)
+    archive.mutate(DECOMMISSION_KEY, mutate)
 
 
 def is_decommission_requested(machine_id):
@@ -191,7 +180,7 @@ class FleetDecommissionCoordinator:
             if isinstance(entry, dict):
                 entry.update(fields)
 
-        _update(mutate)
+        archive.mutate(DECOMMISSION_KEY, mutate)
 
     # ------------------------------------------------------------ main step
 
@@ -210,13 +199,13 @@ class FleetDecommissionCoordinator:
         notes = []
         for machine_id, entry in list(state.items()):
             if not isinstance(entry, dict):
-                _update(lambda s, k=machine_id: s.pop(k, None))
+                archive.pop_entry(DECOMMISSION_KEY, machine_id)
                 continue
             kind = entry.get("kind")
             present = machine_id in drones if kind == "drone" else machine_id in vehicles
             if not present:
                 forget_machine(machine_id, kind)
-                _update(lambda s, k=machine_id: s.pop(k, None))
+                archive.pop_entry(DECOMMISSION_KEY, machine_id)
                 self.log.print(f"[decommission] '{machine_id}' no longer exists; entry and archive state dropped.")
                 continue
             if entry.get("state") == "ready":
@@ -257,7 +246,7 @@ class FleetDecommissionCoordinator:
 
         sold = self._sell_returned(parts, before) if parts else "hardware kept in Inventory"
         forget_machine(machine_id, kind)
-        _update(lambda s: s.pop(machine_id, None))
+        archive.pop_entry(DECOMMISSION_KEY, machine_id)
         self.log.end(f"undeployed; {sold}")
         return f"{machine_id} retired"
 

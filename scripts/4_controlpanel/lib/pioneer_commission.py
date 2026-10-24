@@ -81,19 +81,11 @@ def commission_state():
 
 def update_commission(mutate):
     """Atomically applies mutate(state) (in place) to fleet.commission."""
-
-    def updater(state):
-        if not isinstance(state, dict):
-            state = {}
-        mutate(state)
-        return state
-
-    archive.transaction(COMMISSION_KEY, {}, updater)
+    return archive.mutate(COMMISSION_KEY, mutate)
 
 
 def lineage_entry(vehicle_id):
-    entry = (commission_state().get("lineage") or {}).get(vehicle_id)
-    return entry if isinstance(entry, dict) else None
+    return archive.dict_entry(COMMISSION_KEY, "lineage", vehicle_id)
 
 
 def commission_name(new_id, outpost_id, role):
