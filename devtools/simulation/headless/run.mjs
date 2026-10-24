@@ -22,7 +22,8 @@
 // --hours H              game hours to run (default 1; 1 h = 36,000 ticks)
 // --until-tp N           stop once the Terraform Index reaches N
 // --report-every MIN     metrics line every MIN game minutes (default 10)
-// --out DIR              writes console.log, metrics.jsonl, final_save.json
+// --out DIR              writes console.log, metrics.jsonl, final_save.json, import_steps.json
+//                        (steps of each player module body run, devtools/perf/import_steps.py)
 // --profile              per-system wall time at the end
 // --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
 // --keep-debug           keep the save's per-script debug flags (slow)
@@ -456,6 +457,7 @@ if (out) {
   writeFileSync(join(out, "final_save.json"), sim.serialize());
   const hours = tick => tick === null ? null : +((tick - startTick) / TICKS_PER_SECOND / 3600).toFixed(4);
   writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], ...standins.legacyTotals(), standins: standins.report(), ...metrics(wallStart, startTick) }, null, 1));
+  if (sim.features.importSteps) writeFileSync(join(out, "import_steps.json"), JSON.stringify(sim.importSteps(), null, 1));
 }
 if (a.profile) {
   const ms = sim.systemMs();

@@ -85,6 +85,22 @@ class NeedTests(unittest.TestCase):
         self.assertTrue(on.covers(deep, "weather_deep"))
         self.assertTrue(on.covers(outpost("o", "deep", types={"refiner": 1}), "refinery"))
 
+    def test_observed_list_matches_the_building_walk(self):
+        builds = [
+            {},
+            {"weather_station": 1, "liquid_tank": 2, "refiner": 1},
+            {"habitat": 1, "warehouse": 1, "smelter": 1},
+            {"bio_collector": 1, "bio_lab": 1, "bio_exchange": 1, "bio_caster": 1, "steam_turbine": 1},
+        ]
+        names = list(roles.ROLE_CATALOG) + ["not_a_role"]
+        for biome in ("deep", "volcanic", "frozen"):
+            for types in builds:
+                plain = outpost("o", biome, types=types)
+                listed = dict(plain, observed=on.covered_roles(types, biome))
+                for name in names:
+                    self.assertEqual(on.covers(listed, name), on.covers(plain, name), (biome, types, name))
+                self.assertEqual(on._observed_roles(listed), roles.observed_roles(types, biome))
+
     def test_bio_orders_without_chain_are_now(self):
         needs = on.needs(snap([HOME], bio_orders={"coastal": 2, "frozen": 1}))
         self.assertEqual(roles_of(needs, "now"), ["bio_coastal", "bio_frozen"])
@@ -678,6 +694,23 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(on.feed_stock({"feed_maker_1": {"recipes": partial}}), {})
         self.assertEqual(roles.stock_slots(["feed"], on.feed_stock({})), roles.FEED_FALLBACK_SLOTS)
         self.assertEqual(on.feed_stock(None), {})
+
+    def test_read_stock_items_reads_the_feed_archive(self):
+        from game_rules import RAW_ORE_ITEM_IDS
+        from wildlife_common import FEED_KEY, recipe_of
+        from wildlife_data import SPECIES
+
+        before = archive.get(FEED_KEY, {})
+        self.addCleanup(archive.set, FEED_KEY, before)
+        smelter = [Recipe("smelt_" + ore, {ore: 2}, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
+        archive.set(
+            FEED_KEY, {"feed_maker_1": {"recipes": {recipe_of(s): {"forage": 100, "form_" + s: 1} for s in SPECIES}}}
+        )
+        got = on.read_stock_items(smelter, True)
+        self.assertEqual(got["smelter"], on.smelter_stock(smelter, True)["smelter"])
+        self.assertEqual(len(got["feed"]), len(SPECIES) + 1)
+        archive.set(FEED_KEY, {})
+        self.assertNotIn("feed", on.read_stock_items(smelter, True))
 
     def test_smelter_stock_only_when_every_ore_smelts(self):
         from game_rules import RAW_ORE_ITEM_IDS
