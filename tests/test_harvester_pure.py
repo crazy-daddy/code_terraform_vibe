@@ -155,6 +155,23 @@ class WorstCaseStepTests(unittest.TestCase):
         self.assertLess(ops(hp.seeded_items, items, set(SECTORS), set(SECTORS)), hp.ATOMIC_STEP_BUDGET)
 
 
+class _Cell:
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+
+class CellRowsTests(unittest.TestCase):
+    def test_rows_follow_row_attrs_with_defaults(self):
+        full = _Cell(**{a: i for i, a in enumerate(hp.ROW_ATTRS)})
+        rows = hp.cell_rows([("A1", full), ("A2", _Cell())])
+        self.assertEqual(rows[0], ("A1", tuple(range(len(hp.ROW_ATTRS)))))
+        self.assertEqual(rows[1], ("A2", ("", None, 0, 0, 0, 0, False, False, False)))
+
+    def test_read_chunk(self):
+        cells = [(s, _Cell(**{a: 1 for a in hp.ROW_ATTRS})) for s in SECTORS[: hp.READ_CHUNK]]
+        self.assertLess(ops(hp.cell_rows, cells), hp.ATOMIC_STEP_BUDGET)
+
+
 class MovedPureTests(unittest.TestCase):
     def test_care_kind_table_and_salt_usable(self):
         import field_layout

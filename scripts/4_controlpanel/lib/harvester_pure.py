@@ -1,13 +1,15 @@
 # Pure per-cell computations of the Harvester's publish step (lib/field_keeper.py).
-# Every function here touches no game object, archive, console or clock: the
-# caller reads the cells first and passes plain tuples/dicts, so each call is
-# safe to run through lib/atomic.py's run_atomic() (docs/cheatsheet/dev_workflow.md §1d-1).
+# Every function here touches no archive, console or clock, and no game object
+# except cell_rows(), which only reads the attributes of the Cells it is given;
+# the rest take plain tuples/dicts. So each call is safe to run through
+# lib/atomic.py's run_atomic() (docs/cheatsheet/dev_workflow.md §1d-1).
 # A call handles one chunk (the *_CHUNK constants below); the worst chunk of each
 # function is measured in tests/test_harvester_pure.py against ATOMIC_STEP_BUDGET.
 
 import field_layout
 
 ROW_CHUNK = 32  # planted-cell rows per care/stats scan call (worst row ~120 operations)
+READ_CHUNK = 64  # planted cells per cell_rows() read call (~53 operations each)
 SOON_CHUNK = 96  # planted-cell rows per soon_sectors() call (worst row ~30 operations)
 CARE_CHUNK = 48  # care entries per due_targets() call (worst entry ~45 operations)
 ITEM_CHUNK = 96  # layout entries per demand-count / rotation / seeded call (worst entry ~30 operations)
@@ -126,6 +128,18 @@ def rotation_counts(items, kept, seed_ids):
             seed_id = seed_ids[species]
             rotation[seed_id] = rotation.get(seed_id, 0) + 1
     return rotation
+
+
+def cell_rows(items):
+    """
+    [(sector, row)] of the planted `items` [(sector, Cell)], row in ROW_ATTRS order. The one function here that
+    touches game objects: attribute reads of the Cells passed in, which a callback may do (no write, no scan).
+    One explicit tuple per cell: the game's interpreter has no `operator` module.
+    """
+    return [
+        (sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0), getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0), getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False), getattr(c, "watered", False), getattr(c, "salted", False)))
+        for sector, c in items
+    ]
 
 
 def seeded_items(items, mine, automated):
