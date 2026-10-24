@@ -15,6 +15,7 @@ from components import (
 )
 from game_stubs import OutpostNetwork, Research
 from production_core import _all_outposts
+from production_sites import outpost_by_site_id
 from storage_expand import StorageExpander
 from warehouse_upgrade import WarehouseUpgrader
 
@@ -129,7 +130,7 @@ class PerOutpostLookupTests(harness.StubTestCase):
 
     def test_components_at_drops_unresolved(self):
         del self.world.components["b1"]
-        self.assertEqual(sorted(c.id for c in components_at(self.out, "habitat") if c.id), ["b2"])
+        self.assertEqual([c.id for c in components_at(self.out, "habitat")], ["b2", ""])
 
     def test_components_at_none_outpost_reads_empty(self):
         self.assertEqual(components_at(None, "habitat"), [])
@@ -152,3 +153,22 @@ class SensorValueTests(harness.StubTestCase):
         self.world.add_wildlife_sensor(7).broken = True
         self.assertIsNone(sensor_value("wildlife_sensor", "test.where"))
         self.assertIn("[swallowed] test.where:", self.debug_log())
+
+
+class OutpostBySiteIdTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.add_outpost("outpost_2")
+
+    def test_network_readable_finds_site(self):
+        self.assertEqual(getattr(outpost_by_site_id("outpost_2"), "id", None), "outpost_2")
+        self.assertIsNone(outpost_by_site_id("nope"))
+
+    def test_network_unreadable_resolves_home_id(self):
+        home = home_outpost()
+        self.world.services["outpost_network"] = _RaisingNetwork(self.world)
+        self.assertEqual(getattr(outpost_by_site_id(getattr(home, "id", "")), "id", None), getattr(home, "id", ""))
+
+    def test_network_unreadable_other_id_is_none(self):
+        self.world.services["outpost_network"] = _RaisingNetwork(self.world)
+        self.assertIsNone(outpost_by_site_id("outpost_2"))

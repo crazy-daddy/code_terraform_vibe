@@ -2,7 +2,7 @@
 # targets shared through the demand record, ship-before-craft and the active recipe's
 # remaining crafts.
 from archive import archive
-from components import component
+from components import component, outpost_by_id
 from game_clock import now_tick
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from outpost_mining import HOME_OUTPOST_ID
@@ -137,11 +137,12 @@ def default_root_sites(consumer_sites, fab_sites):
 
 
 def outpost_by_site_id(site_id):
-    """OutpostRef with this id, None when not found."""
-    for outpost in _all_outposts():
-        if getattr(outpost, "id", None) == site_id:
-            return outpost
-    return None
+    """OutpostRef with this id, None when not found. With the network unreadable
+    the home outpost still resolves for its own id (_all_outposts() fallback)."""
+    found = outpost_by_id(site_id)
+    if found is not None:
+        return found
+    return next((o for o in _all_outposts() if getattr(o, "id", None) == site_id), None)
 
 
 def root_remaining(item_id, target, cache: "SourceCache"):
