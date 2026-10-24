@@ -135,8 +135,9 @@ class DecommissionTests(DecommissionTestCase):
         undeploy_stub.assert_called()
         entry = fleet_decommission.decommission_entry("pioneer_1")
         assert entry is not None
-        self.assertEqual(entry["state"], "requested", self.debug_log())
+        self.assertEqual(entry["state"], "ready", self.debug_log())
         self.assertEqual(entry.get("attempts", 0), 0)
+        self.assertNotIn("pioneer_1", self.world.run_control.running)
 
     def test_depot_ids_cover_every_size_and_outpost(self):
         w = self.world

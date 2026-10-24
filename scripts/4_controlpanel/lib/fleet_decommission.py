@@ -21,8 +21,9 @@
 #      computer.undeploy()s it: the hardware goes to Inventory. Refused ->
 #      back to "requested" (script restarted); MAX_UNDEPLOY_ATTEMPTS refusals
 #      -> "blocked" and the recall is cleared. inventory_full is not counted
-#      as a refusal (retried until a slot frees up); neither are error /
-#      no_computer (the call never reached the game). not_found counts as
+#      as a refusal (retried until a slot frees up). error / no_computer
+#      (the call never reached the game) change nothing: the entry stays
+#      "ready", the script stays stopped, the next pass retries. not_found counts as
 #      done: the machine is already gone.
 #   3. undeployed -- a vehicle's snapshot is sold at the Shop (only the
 #      units the undeploy returned). Drone hardware stays in Inventory for
@@ -227,7 +228,11 @@ class FleetDecommissionCoordinator:
         self._stop_script(machine_id)
         status = undeploy(machine_id, logger=self.log, warned=self.warned, computer=computer, tag="[decommission] ")
         if classify(status) not in ("ok", "gone"):
-            attempts = int(entry.get("attempts", 0)) + (0 if status in RETRY_STATUSES or status in CALL_FAILED_STATUSES else 1)
+            if status in CALL_FAILED_STATUSES:
+                # Nothing reached the game: stay "ready" with the script stopped (as the drone swap does) and retry next pass.
+                self.log.end(f"undeploy {status}, retrying")
+                return f"{machine_id} undeploy {status}"
+            attempts = int(entry.get("attempts", 0)) + (0 if status in RETRY_STATUSES else 1)
             start_script(machine_id)
             if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                 self._patch(machine_id, state="blocked", attempts=attempts, reason=status)
