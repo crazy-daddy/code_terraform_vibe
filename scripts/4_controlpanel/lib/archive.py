@@ -136,13 +136,10 @@ class ArchiveClient:
     def set_entry(self, key, entry_id, value):
         """Atomically sets key[entry_id] = value."""
 
-        def updater(entries):
-            if not isinstance(entries, dict):
-                entries = {}
+        def put(entries):
             entries[entry_id] = value
-            return entries
 
-        return self.transaction(key, {}, updater)
+        return self.mutate(key, put)
 
     def publish_status(self, key, name, entry, tick, log: "TreeConsole", stale_ticks=STATUS_STALE_TICKS):
         """
@@ -215,13 +212,10 @@ class ArchiveClient:
     def pop_entry(self, key, entry_id):
         """Atomically removes key[entry_id] (no-op if absent)."""
 
-        def updater(entries):
-            if not isinstance(entries, dict):
-                return {}
+        def drop(entries):
             entries.pop(entry_id, None)
-            return entries
 
-        return self.transaction(key, {}, updater)
+        return self.mutate(key, drop)
 
 
 # Singleton / default instance
