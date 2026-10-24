@@ -159,7 +159,7 @@ def _counts_as_building(type_id):
 
 
 class BuildingRef:
-    """outpost.buildings() entry: .id / .name / .type_id / .outpost."""
+    """outpost.buildings() entry: .id / .name / .type_id / .outpost / .position."""
 
     def __init__(self, component):
         self.id = component.id
@@ -167,6 +167,7 @@ class BuildingRef:
         self.type_id = component.type_id
         self.outpost = component.outpost
         self.powered = True
+        self.position = [0.0, 0.0]
 
 
 class OutpostRef:

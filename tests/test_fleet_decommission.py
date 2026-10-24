@@ -138,6 +138,13 @@ class DecommissionTests(DecommissionTestCase):
         self.assertEqual(entry["state"], "requested", self.debug_log())
         self.assertEqual(entry.get("attempts", 0), 0)
 
+    def test_depot_ids_cover_every_size_and_outpost(self):
+        w = self.world
+        far = w.add_outpost("outpost_2")
+        w.add_drone_depot("depot_2", far, "drone_station_large")
+        w.add_drone_depot("depot_3", far, "drone_station_medium")
+        self.assertEqual(self.coordinator._depot_ids(), {"depot_1", "depot_2", "depot_3"})
+
     def test_fatal_refusal_blocks_after_max_attempts(self):
         self.computer.forced_status = "not_undeployable"
         fleet_decommission.request_decommission("pioneer_1", "pioneer")

@@ -4,6 +4,7 @@
 import unittest
 from unittest import mock
 
+import drone_depots
 import drone_upgrade
 import fleet_upgrade
 import production
@@ -87,6 +88,14 @@ class DepotUpgradeTests(StubTestCase):
 
     def orders(self) -> dict:
         return self.world.notebook.get(production.ORDERS_KEY) or {}
+
+    def test_depot_deployed_in_same_tick_is_seen(self):
+        # the network depot walk memoizes; _advance_depot must not read through it
+        drone_depots._DISCOVERY.ttl_ticks = drone_depots.DISCOVERY_TTL_TICKS
+        drone_depots.discover_drone_depots()
+        new_depot = self.world.add_drone_depot("drone_station_2", self.outpost)
+        self.assertNotIn(new_depot.id, {d["id"] for d in drone_depots.discover_drone_depots()})
+        self.assertIn(new_depot.id, {d["id"] for d in self.coordinator._depots()})
 
     def test_upgrades_in_place_and_keeps_docked_drone(self):
         w = self.world

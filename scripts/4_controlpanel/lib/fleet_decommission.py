@@ -38,12 +38,11 @@
 # inside functions, and the cards import it at load. The cleanup imports its
 # modules inside forget_machine().
 
-import components
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, undeploy
 from components import component, start_script
 from drone_claims import set_drone_recalled
-from item_tiers import DEPOT_TYPE_TIERS
+from drone_depots import discover_drone_depots
 from parking_client import resume_vehicle
 from storage import inventory_count
 from swallow import swallowed
@@ -133,14 +132,7 @@ class FleetDecommissionCoordinator:
         return vehicles, drones
 
     def _depot_ids(self):
-        ids = set()
-        try:
-            for outpost in components.outposts():
-                for type_id in DEPOT_TYPE_TIERS:
-                    ids.update(getattr(ref, "id", "") for ref in outpost.buildings(type_id))
-        except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: outpost.buildings", error)
-        return ids
+        return {d["id"] for d in discover_drone_depots()}
 
     def _cargo_count(self, machine_id):
         machine = component(machine_id)
