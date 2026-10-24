@@ -33,17 +33,10 @@ def is_flagged(key, name):
 
 def set_flagged(key, name, on):
     """Sets or clears name in the {name: True} dict under key."""
-
-    def updater(flags):
-        if not isinstance(flags, dict):
-            flags = {}
-        if on:
-            flags[name] = True
-        else:
-            flags.pop(name, None)
-        return flags
-
-    archive.transaction(key, {}, updater)
+    if on:
+        archive.set_entry(key, name, True)
+    else:
+        archive.pop_entry(key, name)
 
 
 def save_mission(key, name, target_key, kind, target, tick):

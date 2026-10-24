@@ -183,7 +183,7 @@ def storage_outposts(outposts):
     for outpost in outposts:
         if outpost_is_home(outpost):
             continue
-        types = components.building_type_counts(outpost, "site_supply.storage_outposts: outpost.buildings").keys()
+        types = components.building_type_counts(outpost, "site_evict.storage_outposts: outpost.buildings").keys()
         if types & set(STORAGE_TYPE_IDS) and types & set(DEPOT_TYPE_TIERS) and not types & set(PENALIZED_TYPES):
             stores.append(outpost)
     return stores

@@ -172,7 +172,10 @@ class PruneFleetDictTests(harness.StubTestCase):
         data[MINING_REACH_KEY] = {"rover_1": {"r": 1}, "rover_2": {"r": 1}, "rover_3": {}, "rover_4": "junk"}
         cleaner = ArchiveCleaner(dry_run=False, verbose=False)
         self.assertEqual(
-            cleaner._prune_fleet_dict(MINING_REACH_KEY, {"rover_1", "rover_3", "rover_4"}, "DELETE MINING REACH"), 3
+            cleaner._prune_fleet_dict(
+                MINING_REACH_KEY, {"rover_1", "rover_3", "rover_4"}, "DELETE MINING REACH", "mining reach"
+            ),
+            3,
         )
         self.assertEqual(list(data[MINING_REACH_KEY]), ["rover_1"])
 
@@ -180,9 +183,9 @@ class PruneFleetDictTests(harness.StubTestCase):
         data = self.world.notebook.data
         data[MINING_REACH_KEY] = {"rover_1": {"r": 1}}
         cleaner = ArchiveCleaner(dry_run=False, verbose=False)
-        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH"), 0)
+        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH", "mining reach"), 0)
         data[MINING_REACH_KEY] = ["junk"]
-        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH"), 1)
+        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH", "mining reach"), 1)
 
 
 class KeyCoordsTests(unittest.TestCase):

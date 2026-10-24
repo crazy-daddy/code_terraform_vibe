@@ -283,15 +283,14 @@ class ArchiveCleaner:
                 self.archive.mutate(key, pop_still_stale)
         return len(stale)
 
-    def _prune_fleet_dict(self, key, active_vehicles, tag):
+    def _prune_fleet_dict(self, key, active_vehicles, tag, what):
         """
         Drops entries of the fleet-keyed dict `key` whose vehicle is not in
         `active_vehicles` (skipped when that set is empty, so a failed fleet
         query never wipes the dict) or whose payload is empty/malformed. `tag`
-        is the log tag ("DELETE <WHAT>"). A non-dict key is reset. Returns the
-        count removed.
+        is the log tag ("DELETE ..."), `what` the payload noun for the log
+        lines ("telemetry"). A non-dict key is reset. Returns the count removed.
         """
-        what = tag.split(" ", 1)[1].lower()
         removed = 0
         entries = self.archive.get(key, {})
         if self._reset_if_not_dict(key, entries, tag):
@@ -619,7 +618,7 @@ class ArchiveCleaner:
                 if not self.dry_run:
                     self.archive.delete(k)
 
-        telemetry_removed += self._prune_fleet_dict(FLEET_STATUS_KEY, active_vehicles, "DELETE TELEMETRY")
+        telemetry_removed += self._prune_fleet_dict(FLEET_STATUS_KEY, active_vehicles, "DELETE TELEMETRY", "telemetry")
 
         self.stats["telemetry_removed"] += telemetry_removed
         return f"{telemetry_removed} obsolete telemetry entries purged"
@@ -630,7 +629,7 @@ class ArchiveCleaner:
         reach) of vehicles no longer in the fleet, or whose payload is empty/malformed.
         Pruning by existence is skipped when the fleet query came back empty.
         """
-        removed = self._prune_fleet_dict(MINING_REACH_KEY, active_vehicles, "DELETE MINING REACH")
+        removed = self._prune_fleet_dict(MINING_REACH_KEY, active_vehicles, "DELETE MINING REACH", "mining reach")
 
         self.stats["mining_reach_removed"] += removed
         return f"{removed} stale mining reach entries purged"

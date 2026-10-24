@@ -34,17 +34,15 @@ def retire(machine_ids, by):
         return
     now = now_tick()
 
-    def updater(entries):
-        entries = entries if isinstance(entries, dict) else {}
+    def register(entries):
         for machine_id in new:
             if machine_id not in entries:
                 entries[machine_id] = {"by": by, "since": now}
-        return entries
 
     try:
-        archive.transaction(RETIRED_KEY, {}, updater)
+        archive.mutate(RETIRED_KEY, register)
     except Exception as error:
-        swallowed("retired_machines.retire: archive.transaction", error)
+        swallowed("retired_machines.retire: archive.mutate", error)
 
 
 def release(machine_ids):

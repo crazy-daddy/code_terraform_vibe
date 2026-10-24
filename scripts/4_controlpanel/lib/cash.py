@@ -284,16 +284,14 @@ def release(consumer):
     if consumer not in (state.get("asks") or {}) and consumer not in (state.get("holds") or {}):
         return
 
-    def updater(current):
-        current = current if isinstance(current, dict) else {}
-        (current.setdefault("holds", {})).pop(consumer, None)
-        (current.setdefault("asks", {})).pop(consumer, None)
-        return current
+    def drop(state):
+        for section in ("holds", "asks"):
+            (state.get(section) or {}).pop(consumer, None)
 
     try:
-        archive.transaction(BUDGET_KEY, {}, updater)
+        archive.mutate(BUDGET_KEY, drop)
     except Exception as error:
-        swallowed("cash.release: archive.transaction", error)
+        swallowed("cash.release: archive.mutate", error)
 
 
 def set_priority(order):

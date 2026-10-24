@@ -121,7 +121,9 @@ def job_home_base(job):
 
 
 def _queue(kind, role, fields):
+    """Appends a job of `kind` with `fields`; a HOME_OUTPOST_ID `home_base` / `outpost` is stored as None (home). Returns the job id."""
     created = []
+    fields = {k: None if k in ("home_base", "outpost") and v == HOME_OUTPOST_ID else v for k, v in fields.items()}
 
     def mutate(state):
         seq = int(state.get("seq", 0)) + 1
@@ -153,12 +155,12 @@ def job_prio(job):
 
 def queue_pioneer(role, home_base=None, prio=MANUAL):
     """Appends a Pioneer job (FLEET Commission tab button, or autobuild with prio=BUILD); it deploys at home_base and works for it. Returns the job id."""
-    return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base, "prio": prio})
+    return _queue("pioneer", role, {"home_base": home_base, "prio": prio})
 
 
 def queue_drone(role, outpost_id=None, prio=MANUAL):
     """Appends a drone job (FLEET Commission tab button); it deploys at outpost_id (None = home). Returns the job id."""
-    return _queue("drone", role, {"outpost": None if outpost_id == HOME_OUTPOST_ID else outpost_id, "prio": prio})
+    return _queue("drone", role, {"outpost": outpost_id, "prio": prio})
 
 
 def cancel_job(job_id):
