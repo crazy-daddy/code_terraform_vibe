@@ -39,25 +39,19 @@ def stock(item_id):
 
 
 def _record(ids, entry, prio):
-    def planned_updater(planned):
-        if not isinstance(planned, dict):
-            planned = {}
+    def record_planned(planned):
         for blueprint_id in ids:
             planned[blueprint_id] = entry
-        return planned
 
-    archive.transaction(PLANNED_KEY, {}, planned_updater)
+    archive.mutate(PLANNED_KEY, record_planned)
     if prio == DEFAULT_PRIORITY:
         return
 
-    def priority_updater(priorities):
-        if not isinstance(priorities, dict):
-            priorities = {}
+    def record_priority(priorities):
         for blueprint_id in ids:
             priorities[blueprint_id] = prio
-        return priorities
 
-    archive.transaction(PRIORITY_KEY, {}, priority_updater)
+    archive.mutate(PRIORITY_KEY, record_priority)
 
 
 def cancel(ids):

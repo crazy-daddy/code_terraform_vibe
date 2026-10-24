@@ -300,15 +300,13 @@ class TurbineCommitment:
 
     @staticmethod
     def _record(woke, parked_now, now, grid_id_str):
-        def updater(parked):
-            parked = parked if isinstance(parked, dict) else {}
+        def apply_change(parked):
             for t in woke:
                 parked.pop(t, None)
             for t in parked_now:
                 parked[t] = {"kind": TURBINE_TYPE_ID, "mode": PARK_MODE, "since": now, "grid": grid_id_str}
-            return parked
 
         try:
-            archive.transaction(PARKED_KEY, {}, updater)
+            archive.mutate(PARKED_KEY, apply_change)
         except Exception as error:
-            swallowed("turbine_commit._record: archive.transaction", error)
+            swallowed("turbine_commit._record: archive.mutate", error)

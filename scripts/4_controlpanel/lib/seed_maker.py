@@ -208,15 +208,12 @@ class SeedMakerController:
     def _mark_tried(self, keys):
         """Marks every key in `keys` as tried (overwriting this maker's claim on it)."""
 
-        def updater(tried):
-            if not isinstance(tried, dict):
-                tried = {}
+        def mark(tried):
             for key in keys:
                 tried[key] = True
             self._tried = tried
-            return tried
 
-        archive.transaction(TRIED_KEY, {}, updater)
+        archive.mutate(TRIED_KEY, mark)
 
     def _release(self, key):
         def updater(tried):

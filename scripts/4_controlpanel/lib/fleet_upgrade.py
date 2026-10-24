@@ -473,13 +473,10 @@ class FleetUpgradeCoordinator:
         if pin is not None:
 
             def repin(pins):
-                if not isinstance(pins, dict):
-                    pins = {}
                 pins.pop(old_id, None)
                 pins[new_id] = pin
-                return pins
 
-            archive.transaction(HOME_DEPOTS_KEY, {}, repin)
+            archive.mutate(HOME_DEPOTS_KEY, repin)
         forget_machine(old_id, "drone", upgrade_state=False)
 
     # ------------------------------------------------------------ pruning

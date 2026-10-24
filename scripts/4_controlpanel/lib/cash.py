@@ -257,17 +257,15 @@ def keep(consumer):
         return
     now = now_tick()
 
-    def updater(state):
-        state = state if isinstance(state, dict) else {}
+    def refresh(state):
         ask = (state.setdefault("asks", {})).get(consumer)
         if isinstance(ask, dict):
             ask["tick"] = now
-        return state
 
     try:
-        archive.transaction(BUDGET_KEY, {}, updater)
+        archive.mutate(BUDGET_KEY, refresh)
     except Exception as error:
-        swallowed("cash.keep: archive.transaction", error)
+        swallowed("cash.keep: archive.mutate", error)
 
 
 def release(consumer):

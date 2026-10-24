@@ -441,17 +441,15 @@ class ScriptParking:
         if not dropped and not written:
             return
 
-        def updater(parked):
-            parked = parked if isinstance(parked, dict) else {}
+        def apply_diff(parked):
             for machine_id in dropped:
                 parked.pop(machine_id, None)
             parked.update(written)
-            return parked
 
         try:
-            archive.transaction(PARKED_KEY, {}, updater)
+            archive.mutate(PARKED_KEY, apply_diff)
         except Exception as error:
-            swallowed("script_parking.ScriptParking._commit: archive.transaction", error)
+            swallowed("script_parking.ScriptParking._commit: archive.mutate", error)
 
     def _adopt_orphans(self, parked, requests, woken, shed, members, now):
         """
