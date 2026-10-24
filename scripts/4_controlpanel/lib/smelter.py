@@ -319,17 +319,12 @@ class SmelterController(RecipeClaimMixin, MachineController):
             return
         site_id = claim_site_id(self.smelter)
 
-        def updater(stored):
-            stored = dict(stored) if isinstance(stored, dict) else {}
-            for smelter_id in [k for k, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
-                del stored[smelter_id]
-            if want:
-                stored[self.name] = {"site": site_id, "ore": want[0], "fill_to": want[1], "prio": want[2], "tick": now}
-            else:
-                stored.pop(self.name, None)
-            return stored
-
-        if archive.transaction(SMELTER_WANTS_KEY, {}, updater):
+        if want:
+            entry = {"site": site_id, "ore": want[0], "fill_to": want[1], "prio": want[2]}
+            written = archive.publish_status(SMELTER_WANTS_KEY, self.name, entry, now, self.log, stale_ticks=WANTS_STALE_TICKS)
+        else:
+            written = archive.pop_entry(SMELTER_WANTS_KEY, self.name)
+        if written:
             self._want_published = want
             self._want_tick = now
             self.log.debug(f"[{self.name}] depot feed want {want or 'nothing'}")

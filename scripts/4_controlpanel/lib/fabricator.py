@@ -701,17 +701,11 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         wants = dict(self._wants)
         site_id = claim_site_id(self.machine)
 
-        def updater(stored):
-            stored = dict(stored) if isinstance(stored, dict) else {}
-            for fab_id in [f for f, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
-                del stored[fab_id]
-            if wants:
-                stored[self.name] = {"site": site_id, "wants": wants, "tick": now}
-            else:
-                stored.pop(self.name, None)
-            return stored
-
-        if archive.transaction(FABRICATOR_WANTS_KEY, {}, updater):
+        if wants:
+            written = archive.publish_status(FABRICATOR_WANTS_KEY, self.name, {"site": site_id, "wants": wants}, now, self.log, stale_ticks=WANTS_STALE_TICKS)
+        else:
+            written = archive.pop_entry(FABRICATOR_WANTS_KEY, self.name)
+        if written:
             self._wants_published = wants
             self._wants_tick = now
             self.log.debug(f"[{self.name}] wants {wants or 'nothing'}")
