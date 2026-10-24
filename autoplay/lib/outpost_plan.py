@@ -580,16 +580,7 @@ def read_demand():
 
 def kit_price():
     """Next outpost kit's Shop price (the catalogue's cost rises per kit owned); None when not listed."""
-    shop = get_component("shop")
-    if shop is None:
-        return None
-    try:
-        for item in shop.get_catalogue() or []:
-            if item.id == KIT_ID:
-                return int(item.cost)
-    except Exception as error:
-        swallowed("outpost_plan.kit_price: shop.get_catalogue", error)
-    return None
+    return cash.shop_prices().get(KIT_ID)
 
 
 def apply_designation(entry):

@@ -32,8 +32,9 @@
 #    generators standing, "swap": bool, "why": [...], "scores": {key: score},
 #    "mode": "research" | "even" | "done", "tick"}
 
+import cash
 import game_phase
-from components import component, machine_tier, outposts
+from components import machine_tier, outposts
 from pillar_swap import MAX_SWAP_TIER, PILLAR_LABELS, PILLARS, is_running, pack_id
 from storage import inventory_count
 from swallow import swallowed
@@ -227,14 +228,7 @@ def read_generators():
 
 
 def read_prices():
-    shop = component("shop")
-    if shop is None:
-        return {}
-    try:
-        return {entry.id: int(entry.cost) for entry in shop.get_catalogue() or []}
-    except Exception as error:
-        swallowed("focus_plan.read_prices: shop.get_catalogue", error)
-        return {}
+    return cash.shop_prices()
 
 
 def pack_available(prices):

@@ -211,11 +211,16 @@ class ShopPricesTests(CashTestCase):
         self.world.services["shop"].get_catalogue = boom
         self.assertEqual(cash.shop_prices(), {})
 
+    def test_bad_cost_skips_only_that_entry(self):
+        self.world.services["shop"].prices = {"a": 12, "bad": "x", "c": 3}
+        self.assertEqual(cash.shop_prices(), {"a": 12, "c": 3})
+
     def test_shop_price_fallback_for_unknown_id(self):
         self.world.services["shop"].prices = {"a": 12}
         self.assertEqual(cash.shop_price("a"), 12)
         self.assertEqual(cash.shop_price("zzz", 7), 7)
-        self.assertEqual(cash.shop_price("zzz"), 0)
+        self.assertIsNone(cash.shop_price("zzz"))
+        self.assertEqual(cash.shop_price("zzz", 0), 0)
 
 
 class ReserveTests(CashTestCase):

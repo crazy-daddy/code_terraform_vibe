@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING
 import autoplay_roles
 import build_providers
 import building_ops
+import cash
 import components
 import focus_plan
 import game_phase
@@ -588,14 +589,7 @@ def _safe(name, read, default):
 
 
 def read_prices():
-    shop = component("shop")
-    if shop is None:
-        return {}
-    try:
-        return {item.id: int(item.cost) for item in shop.get_catalogue() or []}
-    except Exception as error:
-        swallowed("building_plan.read_prices: shop.get_catalogue", error)
-        return {}
+    return cash.shop_prices()
 
 
 def build_context(snap, phase, focus, tick):

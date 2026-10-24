@@ -208,7 +208,7 @@ class VehicleCargoMixin:
         loaded = 0
         while loaded < amount:
             qty = min(amount - loaded, stack_size)
-            cost = qty * cash.shop_price(item_id)
+            cost = qty * cash.shop_price(item_id, 0)
             cash_id = f"pioneer_reagents:{self._host.name}"
             if not cash.can_spend(cash_id, cost, label=f"{qty}x {item_id}"):
                 self._host.log.debug(f"{qty}x {item_id} ({cost} cr): cash manager holds it back.")

@@ -102,15 +102,21 @@ _prices = {}
 def shop_prices():
     """{id: int(cost)} of the live Shop catalogue, read fresh (a kit's price rises per kit owned); {} if unreadable."""
     shop = component("shop")
+    prices = {}
     try:
-        return {entry.id: int(entry.cost) for entry in shop.get_catalogue()} if shop else {}
+        for entry in shop.get_catalogue() if shop else []:
+            try:
+                prices[entry.id] = int(entry.cost)
+            except Exception as error:
+                swallowed("cash.shop_prices: entry cost", error)
     except Exception as error:
         swallowed("cash.shop_prices: shop.get_catalogue", error)
         return {}
+    return prices
 
 
-def shop_price(item_id, fallback=0):
-    """Shop catalogue price of item_id, cached per script run (static items such as reagents; use shop_prices() for kits)."""
+def shop_price(item_id, fallback=None):
+    """Shop catalogue price of item_id (int | None), cached per script run (static items such as reagents; use shop_prices() for kits)."""
     if item_id not in _prices:
         _prices.update(shop_prices())
     return _prices.get(item_id, fallback)
