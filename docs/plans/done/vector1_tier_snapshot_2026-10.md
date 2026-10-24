@@ -8,7 +8,7 @@
 
 **Tech Stack:** game-interpreter Python (`scripts/4_controlpanel/lib`), host `unittest` with `tests/harness.py` stubs, `devtools/perf/tick_profile.py` on save 0839.
 
-**Status:** done (2026-10-22, `9a83a07` to `2054879`, results `790272f`).
+**Status:** done (2026-10-22, `9a83a07` to `2054879`, results `790272f`; drone plan missed its ~130-tick target, see Results).
 
 **Spec:** [performance_planning_2026-10.md](../performance_planning_2026-10.md), "Findings" 1 and 4, "Optimization vectors" 1, "Rollout" Vector 1 bullets. This file carries the design decisions (section "Design") and the plan.
 
@@ -256,5 +256,5 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
 - [x] **Step 1: Baselines.** Rerun on `main` (before the merge) and on the branch, save 0839, `--hours 0.4`, the three commands under "Measurements" above (drone and role gates), plus `--gate job_pull:PullJob.pick --modules pull_plan,logistics_requests --label "'pull'"` on save A (`internals/sample_saves/20261007_c5f9ebf/saves/0262_t349372.json.gz`) and `--gate role_demand:publish` on save A. Same modules and window before and after.
 - [x] **Step 2: Check the record age.** Add `--gate logistics_snapshot:SnapshotPublisher.step --label "args[0]"` on save 0839; worst age between published `"tick"` and the next publish must stay under `LOGISTICS_FRESH_TICKS`. If not, report it; do not raise the window without the operator. Outcome: ages reached ~3,900, `2054879` raised `LOGISTICS_FRESH_TICKS` to 5000 (Results in `performance_planning_2026-10.md`).
 - [x] **Step 3: Results rows** (one per gate) in `performance_planning_2026-10.md`; design reasons (decisions 1, 3, 5, 6 and the measurements) into `docs/design_history/logistics_production.md`.
-- [x] **Step 4: Full checks** (`python -m unittest discover -s tests`, ruff, pyright), `caveman:cavecrew-reviewer` on the branch with the session's model, fix findings.
-- [x] **Step 5: Commit** `docs(perf): vector 1 results`.
+- [x] **Step 4: Full checks** (`python -m unittest discover -s tests`, ruff, pyright), `caveman:cavecrew-reviewer` on the branch with the session's model, fix findings.  Outcome: review fixes landed in `e720b0f`.
+- [x] **Step 5: Commit** `docs(perf): vector 1 results`. Landed as `790272f` `docs(plans): record vector 1 results`.
