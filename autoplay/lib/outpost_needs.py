@@ -106,8 +106,6 @@ from outpost_mining import resource_assignment_range_m
 from storage import PENALIZED_TYPES
 from supply_tiers import NEAR_TILES, fluid_sites, gap
 from swallow import safe_call, swallowed
-from wildlife_common import FEED_KEY, recipe_of
-from wildlife_data import SPECIES
 
 if TYPE_CHECKING:
     from typing import Callable, TypeVar
@@ -673,6 +671,8 @@ def read_stock_items(smelter_recipes, large):
     Stock lists from in-game data: smelter_stock() (staged by the Large
     Warehouse, `large`) and feed_stock() (complete lists only).
     """
+    from wildlife_common import FEED_KEY  # function-level: keeps the wildlife tables out of the import chain (see feed_stock())
+
     out = smelter_stock(smelter_recipes, large)
     out.update(feed_stock(archive.get(FEED_KEY, {})))
     return out
@@ -709,6 +709,12 @@ def feed_stock(feed):
     recipes read there cover every species (wildlife_common.recipe_of());
     {} before that.
     """
+    # Function-level: wildlife_common and wildlife_data cost ~2,000 import steps,
+    # a fifth of outpost_plan's chain under the 10,000-step import cap
+    # (devtools/perf/import_steps.py); here they load on the first snapshot().
+    from wildlife_common import recipe_of
+    from wildlife_data import SPECIES
+
     recipes = {}
     for entry in feed.values() if isinstance(feed, dict) else []:
         found = entry.get("recipes", {}) if isinstance(entry, dict) else {}
