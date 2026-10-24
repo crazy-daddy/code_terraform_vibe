@@ -1,5 +1,5 @@
 """Guard: every game service our code requests by a literal id
-(`get_component("clock")`) is faked by tests/game_stubs.World, or listed in
+(`get_component("clock")`, `sensor_value("biomass_sensor", ...)`) is faked by tests/game_stubs.World, or listed in
 KNOWN_GAPS. A new service in scripts/ or autoplay/ fails here until it gets a
 shared fake (with contract-test coverage) or a deliberate KNOWN_GAPS entry; a
 gap that gains a fake must leave the list.
@@ -34,6 +34,13 @@ KNOWN_GAPS = {
 }
 
 
+def _requests_service(func):
+    """get_component(...), or components.sensor_value(...) which reads one."""
+    if isinstance(func, ast.Name):
+        return func.id in ("get_component", "sensor_value")
+    return isinstance(func, ast.Attribute) and func.attr == "sensor_value"
+
+
 @functools.cache
 def requested_services():
     """{service id: first "path:line" requesting it} over SOURCE_DIRS."""
@@ -47,11 +54,7 @@ def requested_services():
                 with open(path, encoding="utf-8") as handle:
                     tree = ast.parse(handle.read(), path)
                 for node in ast.walk(tree):
-                    if not (
-                        isinstance(node, ast.Call)
-                        and isinstance(node.func, ast.Name)
-                        and node.func.id == "get_component"
-                    ):
+                    if not (isinstance(node, ast.Call) and _requests_service(node.func)):
                         continue
                     arg = node.args[0] if node.args else None
                     if (

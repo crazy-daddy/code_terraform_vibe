@@ -3,7 +3,7 @@
 # plant_terraformer_demand.py), lib/plants_retire.py, lib/pump_salt.py,
 # lib/harvester_machines.py and devtools/simulation/plants_wildlife_timeline.py.
 
-from swallow import swallowed
+from components import sensor_value
 
 STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
@@ -44,12 +44,7 @@ def plants_band_edges():
 
 def plants_km2():
     """Permanent Plants km² from the Plants Sensor, or None when there is none."""
-    try:
-        sensor = get_component("plants_sensor")
-        return float(sensor.get_value()) if sensor else None
-    except Exception as error:
-        swallowed("plant_terraformer_common.plants_km2: get_component", error)
-        return None
+    return sensor_value("plants_sensor", "plant_terraformer_common.plants_km2: get_component")
 
 
 def ceil_int(value):

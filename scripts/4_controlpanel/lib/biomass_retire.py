@@ -1,6 +1,7 @@
 import fluid_routing
 from archive import archive
 from building_ops import undeploy
+from components import sensor_value
 from retired_machines import release, retire, retired_ids, sell_kits
 from swallow import safe_call, swallowed
 from tree_console import TreeConsole
@@ -60,12 +61,7 @@ log = TreeConsole(module="biomass_retire")
 
 def biomass_tons():
     """Planet biomass in tons (biomass_sensor), 0.0 when unreadable."""
-    try:
-        sensor = get_component("biomass_sensor")
-        return float(sensor.get_value()) if sensor else 0.0
-    except Exception as error:
-        swallowed("biomass_retire.biomass_tons: biomass_sensor.get_value", error)
-        return 0.0
+    return sensor_value("biomass_sensor", "biomass_retire.biomass_tons: biomass_sensor.get_value") or 0.0
 
 
 def biomass_complete():

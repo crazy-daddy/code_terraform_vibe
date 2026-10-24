@@ -953,12 +953,7 @@ def plan():
 
 def _population():
     """Wildlife sensor reading, or None when the sensor is missing or fails."""
-    try:
-        sensor = get_component("wildlife_sensor")
-        return sensor.get_value() if sensor else None
-    except Exception as error:
-        swallowed("wildlife_planner._population: wildlife_sensor.get_value", error)
-        return None
+    return components.sensor_value("wildlife_sensor", "wildlife_planner._population: wildlife_sensor.get_value")
 
 
 def plan_if_due():
