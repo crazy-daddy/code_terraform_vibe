@@ -88,7 +88,7 @@ Logic-shaped duplicates the scans cannot pair, from `autoplay/lib` (every `def` 
 ### Per-outpost building type counts
 - Sites: `ap/outpost_needs.py:641 read_outposts` (:654-656, `{type_id: count}`), `L/commission_card.py:47 read_outposts` (:63-64, membership), `L/site_evict.py:176 storage_outposts` (:186, type set). Not this family: `ap/building_plan.py:348 read_grids` (:363-366 counts grid members, a different source).
 - Rule: one unfiltered `outpost.buildings()` walk, counted by `type_id`.
-- Verdict: **merge**: `components.building_type_counts(outpost) -> dict[str, int]` (`{}` on a raised walk); membership and set tests read its keys. Risk low, S (3 sites).
+- Verdict: **merge**: `components.building_type_counts(outpost) -> dict[str, int]` (`{}` on a raised walk); membership and set tests read its keys. Risk low, S (3 sites). Apart: `ap/outpost_needs.read_outposts` (a raised walk skips the outpost; `{}` would read as empty).
 
 ### Fabricator target folds
 - Sites: `L/production_cascade.py:663 _fold_order_book` (:674-675), `:717 _fold_blueprint_demand` (:734-736), `:636 _fold_manual_orders` (:657-659, `ladder_raise`), `:686 _fold_dock_orders` (:713-714, `ladder_raise`).
