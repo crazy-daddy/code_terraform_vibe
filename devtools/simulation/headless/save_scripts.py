@@ -25,7 +25,8 @@ an empty script and DIR/lib/strip_autoplay.json lists its lib modules, which run
 lib module that still imports a stripped lib is reported. --check prints only the
 warning and writes nothing (run.mjs runs it for --save runs that stage their own
 scripts; --staged-scripts/--staged-libs name what replaces the save's). Below the lib
-tier autoplay/ is neither staged nor detected, as in scripts_sync.build_index().
+tier the warning stays quiet (scripts_sync.build_index()'s gate); --include-autoplay
+and --strip-autoplay act at every tier.
 
     save_scripts.py --save SAVE.json --out DIR [--include-autoplay | --strip-autoplay]
     save_scripts.py --save SAVE.json --check [--staged-scripts DIR] [--staged-libs DIR]
@@ -72,7 +73,7 @@ def save_libraries(state: dict) -> dict:
 
 def at_lib_tier(tier: str) -> bool:
     """True when scripts_sync.build_index() would merge autoplay/ at this tier: below it the
-    game refuses Libraries (research_required), so autoplay/ is neither staged nor detected."""
+    game refuses Libraries (research_required), so the stale-autoplay warning stays quiet."""
     number = sync.tier_number(tier)
     return number is not None and number >= sync.LIB_UNLOCK_TIER_NUMBER
 
@@ -82,7 +83,7 @@ def autoplay_content(state: dict, script_index: dict, lib_index: dict, autoplay_
     resolves to an autoplay/*.py (sync.source_for() over autoplay/ alone), libs as the save's
     lib/ module stems whose match_key() names an autoplay/lib/*.py (merge_autoplay()'s keys).
     script_index/lib_index are the tier's, before merge_autoplay(): a key scripts/ resolves
-    stays scripts/ content, as there. Callers apply the lib-tier gate (at_lib_tier())."""
+    stays scripts/ content, as there. Ungated: only the warning applies at_lib_tier()."""
     ap_scripts, ap_libs = {}, {}
     sync.merge_autoplay(autoplay_dir, ap_scripts, ap_libs, {})
     slots = []
@@ -192,17 +193,17 @@ def main() -> int:
     tiers = sync.discover_tiers(args.scripts_dir)
     tier = args.tier or sync.tier_for_state(args.scripts_dir, tiers, sync.summarize_state(state))
     script_index, lib_index, conflicts = sync.build_index(args.scripts_dir, tier)
-    # Same lib-tier gate as scripts_sync.build_index(): below it autoplay/ is neither staged nor detected.
-    gated = at_lib_tier(tier)
-    ap_slots, ap_libs = autoplay_content(state, script_index, lib_index, args.autoplay_dir) if gated else ([], [])
+    ap_slots, ap_libs = autoplay_content(state, script_index, lib_index, args.autoplay_dir)
     if args.check:
         staged = {p.stem for p in args.staged_scripts.glob("*.py")} if args.staged_scripts else set()
         staged_libs = {p.stem for p in args.staged_libs.glob("*.py")} if args.staged_libs else set()
         ap_slots = [(stem, role) for stem, role in ap_slots if stem not in staged]
         ap_libs = [stem for stem in ap_libs if stem not in staged_libs]
-    if args.include_autoplay and gated:
+    if args.include_autoplay:
         sync.merge_autoplay(args.autoplay_dir, script_index, lib_index, conflicts)
-    elif not (args.include_autoplay or args.strip_autoplay) and (ap_slots or ap_libs):
+    # The warning keeps scripts_sync.build_index()'s lib-tier gate (no Library loads below it);
+    # --include-autoplay and --strip-autoplay act at every tier.
+    elif not args.strip_autoplay and at_lib_tier(tier) and (ap_slots or ap_libs):
         for line in autoplay_warning(ap_slots, ap_libs):
             print(line, file=sys.stderr)
     if args.check:

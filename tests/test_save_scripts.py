@@ -160,11 +160,15 @@ class MainAutoplayTest(unittest.TestCase):
         self.assertIn("slots: automation_2 (infra_planner_automation)\n", err)
         self.assertNotIn("lib/" + save_scripts.STRIP_MANIFEST, files)
 
-    def test_no_autoplay_below_the_lib_tier(self):
-        err, files = self._main(tier="0_cold_boot")
+    def test_below_the_lib_tier_only_the_warning_is_gated(self):
+        err, _ = self._main(tier="0_cold_boot")
         self.assertNotIn("warn", err)
-        err, files = self._main("--include-autoplay", tier="0_cold_boot")
-        self.assertNotIn("lib/blueprint_queue.py", files)
+        _, files = self._main("--include-autoplay", tier="0_cold_boot")
+        self.assertIn("lib/blueprint_queue.py", files)  # staged as before: run.mjs adds the planner
+        _, files = self._main("--strip-autoplay", tier="0_cold_boot")
+        self.assertEqual(files["automation_2.py"], save_scripts.STRIPPED_BODY.format(role="infra_planner_automation"))
+        # The fixture's autoplay/lib/storage.py counts too here: tier 0 resolves no storage lib.
+        self.assertIn("blueprint_queue", json.loads(files["lib/" + save_scripts.STRIP_MANIFEST])["libs"])
 
     def test_no_warning_with_include_autoplay(self):
         err, files = self._main("--include-autoplay")
