@@ -6,8 +6,8 @@ from components import component
 from game_clock import now_tick
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from outpost_mining import HOME_OUTPOST_ID
-from priority import NONE, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, top_deficit
-from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, recipe_for_output, totals
+from priority import NONE, ladder_add, ladder_deficits, ladder_lower, ladder_max, ladder_total, ladder_totals, top_deficit
+from production_cascade import _cascade_fabricator_output_demand, fabricator_root_targets, fabricator_target_ladders, recipe_for_output
 from production_core import _all_outposts, _ceil, _default_fabricator, claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, machine_speed, split_units
 from production_demand_record import read_record, site_entry
 from production_source import SourceCache
@@ -158,7 +158,7 @@ def root_deficits(item_id, levels, cache: "SourceCache"):
 
 def get_site_fabricator_targets(site_id, cache: "SourceCache | None" = None, reuse=True):
     """{item_id: units} of get_site_fabricator_ladders(): the site's flat "keep at least N" targets."""
-    return totals(get_site_fabricator_ladders(site_id, cache, reuse))
+    return ladder_totals(get_site_fabricator_ladders(site_id, cache, reuse))
 
 
 def get_site_fabricator_ladders(site_id, cache: "SourceCache | None" = None, reuse=True):
@@ -334,13 +334,13 @@ def _site_base_targets(site_id, cache: "SourceCache"):
     if site_id in cache._site_base_targets:
         return cache._site_base_targets[site_id]
     if _single_fab_site(cache):
-        targets = totals(fabricator_target_ladders(cache))
+        targets = ladder_totals(fabricator_target_ladders(cache))
     else:
         seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
         targets = _copy(seed)
         for item_id, levels in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.fab_have(i, outpost)).items():
             targets[item_id] = ladder_max(targets.get(item_id, []), levels)
-        targets = totals(targets)
+        targets = ladder_totals(targets)
     cache._site_base_targets[site_id] = targets
     return targets
 

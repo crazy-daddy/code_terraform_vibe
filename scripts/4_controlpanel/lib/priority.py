@@ -141,6 +141,11 @@ def ladder_total(levels):
     return levels[-1][1] if levels else 0
 
 
+def ladder_totals(ladders):
+    """{item_id: ladder_total} of {item_id: ladder}."""
+    return {item_id: ladder_total(levels) for item_id, levels in ladders.items()}
+
+
 def ladder_raise(levels, prio, cum):
     """`levels` with a floor of `cum` units at `prio` (max-fold: a root's level
     for the same item from another source). Lower levels rise to at least

@@ -3,7 +3,7 @@
 from archive import archive
 from game_clock import now_tick
 from parking_client import wake_on_rise
-from priority import STOCK, UPGRADE, clamp, ladder_total
+from priority import STOCK, UPGRADE, clamp, ladder_totals
 from production_core import log
 from production_source import SourceCache
 from storage import outpost_is_home
@@ -298,7 +298,7 @@ def order_ladders(skip=(), only=None):
 
 def order_items(skip=()):
     """{item_id: units} summed over every level of every requester's order except `skip` (the flat floor)."""
-    return {item_id: ladder_total(levels) for item_id, levels in order_ladders(skip).items()}
+    return ladder_totals(order_ladders(skip))
 
 
 def set_order(requester, items, site=None, stale_ticks=None):

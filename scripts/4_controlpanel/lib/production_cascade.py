@@ -11,7 +11,7 @@ from components import component
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY, clean_priorities
 from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
-from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total
+from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total, ladder_totals
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
 from production_demand_record import blueprint_entry, depths_entry, read_record
 from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_order_site_shares, dock_owed_at, order_prio_of
@@ -48,16 +48,11 @@ def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
     return {r.output_item for r in recipes if getattr(r, "output_item", None)}
 
 
-def totals(ladders):
-    """{item_id: ladder_total} of {item_id: ladder}."""
-    return {item_id: ladder_total(levels) for item_id, levels in ladders.items()}
-
-
 def blueprint_demand_items(cache: "SourceCache | None" = None):
     """{item_id: gross demand} for every item any pending/paused Construction
     Blueprint needs, directly or via the recipe cascade
     (_cascade_blueprint_demand())."""
-    return totals(_cascade_blueprint_demand(cache))
+    return ladder_totals(_cascade_blueprint_demand(cache))
 
 
 def _stock_fn(cache: "SourceCache | None"):
@@ -364,7 +359,7 @@ def blueprint_required_ladders(cache: "SourceCache | None" = None):
 
 def blueprint_required_items(cache: "SourceCache | None" = None):
     """{item_id: units} of blueprint_required_ladders()."""
-    return totals(blueprint_required_ladders(cache))
+    return ladder_totals(blueprint_required_ladders(cache))
 
 
 def _cascade_blueprint_demand(cache: "SourceCache | None" = None):
@@ -587,7 +582,7 @@ def fabricator_target_ladders(cache: "SourceCache | None" = None):
 
 def get_fabricator_targets(cache: "SourceCache | None" = None):
     """{item_id: units} of fabricator_target_ladders(): the flat "keep at least N" targets."""
-    return totals(fabricator_target_ladders(cache))
+    return ladder_totals(fabricator_target_ladders(cache))
 
 
 @log.block()
