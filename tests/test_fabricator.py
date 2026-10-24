@@ -15,6 +15,21 @@ def run_steps(controller, n):
         controller.step()
 
 
+class PublishWantsTests(StubTestCase):
+    def test_empty_want_pops_only_its_own_entry(self):
+        w = self.world
+        controller = fabricator.FabricatorController(w.add_fabricator("fabricator_1", w.home))
+        w.notebook.set(
+            production.FABRICATOR_WANTS_KEY,
+            {"fabricator_1": {"site": "home", "wants": {"iron_ingot": [5, 1]}, "tick": 1}, "other": {"tick": 0}},
+        )
+        controller._wants = {}
+        controller._wants_published = {"iron_ingot": [5, 1]}
+        controller.publish_wants()
+        self.assertEqual(w.notebook.get(production.FABRICATOR_WANTS_KEY), {"other": {"tick": 0}})
+        self.assertEqual(controller._wants_published, {})
+
+
 class HomeFabricatorTests(StubTestCase):
     def setUp(self):
         super().setUp()
