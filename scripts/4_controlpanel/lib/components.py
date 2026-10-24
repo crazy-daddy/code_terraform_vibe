@@ -152,6 +152,48 @@ def outposts() -> "list[OutpostRef]":
         return []
 
 
+def outpost_by_id(outpost_id) -> "OutpostRef | None":
+    """The outposts() entry with this id; None when there is none."""
+    return next((o for o in outposts() if getattr(o, "id", None) == outpost_id), None)
+
+
+def building_ids_at(outpost, type_id, where="components.building_ids_at: outpost.buildings") -> "list[str]":
+    """Sorted ids of the type_id buildings at outpost, empty ids dropped. Unmemoized
+    (fresh right after a deploy). [] for no outpost or a raised walk (swallowed under `where`)."""
+    if outpost is None:
+        return []
+    try:
+        return sorted(i for i in (getattr(ref, "id", "") for ref in outpost.buildings(type_id)) if i)
+    except Exception as error:
+        swallowed(where, error)
+        return []
+
+
+def components_at(outpost, type_id, where="components.components_at: outpost.buildings") -> list:
+    """The resolved components of the type_id buildings at outpost, unresolved ones
+    dropped. [] for no outpost or a raised walk (swallowed under `where`)."""
+    if outpost is None:
+        return []
+    try:
+        refs = outpost.buildings(type_id)
+    except Exception as error:
+        swallowed(where, error)
+        return []
+    found = (get_component(getattr(ref, "id", "")) for ref in refs or [])
+    return [c for c in found if c is not None]
+
+
+def sensor_value(sensor_id, where) -> "float | None":
+    """float(sensor.get_value()); None when there is no such sensor or the read raises
+    (swallowed under `where`)."""
+    try:
+        sensor = get_component(sensor_id)
+        return float(sensor.get_value()) if sensor else None
+    except Exception as error:
+        swallowed(where, error)
+        return None
+
+
 def home_outpost_id():
     """Id of home_outpost(); None when unreadable."""
     return getattr(home_outpost(), "id", None)
