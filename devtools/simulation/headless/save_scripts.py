@@ -22,9 +22,13 @@ resolve to an autoplay/*.py the way scripts_sync.py resolves them) is staged onl
 a warning on stderr names it. --strip-autoplay loads none of it instead: its slots get
 an empty script and DIR/lib/strip_autoplay.json lists its lib modules, which run.mjs
 --strip-autoplay drops from the loaded save (the save file is never changed). A slot or
-lib module that still imports a stripped lib is reported.
+lib module that still imports a stripped lib is reported. --check prints only the
+warning and writes nothing (run.mjs runs it for --save runs that stage their own
+scripts; --staged-scripts/--staged-libs name what replaces the save's). Below the lib
+tier autoplay/ is neither staged nor detected, as in scripts_sync.build_index().
 
     save_scripts.py --save SAVE.json --out DIR [--include-autoplay | --strip-autoplay]
+    save_scripts.py --save SAVE.json --check [--staged-scripts DIR] [--staged-libs DIR]
 """
 
 import argparse
@@ -56,7 +60,9 @@ STRIP_MANIFEST = "strip_autoplay.json"  # in DIR/lib: the autoplay lib modules r
 
 
 def save_libraries(state: dict) -> dict:
-    """Module stem -> source of every lib/ module the save holds (state.libraryScripts)."""
+    """Module stem -> source of every lib/ module the save holds (state.libraryScripts),
+    keyed by the entry's `<name>.py` (its dict key only when it has none), as
+    scripts_sync._library_entries() keys them; simhost.mjs dropLibraries() matches the same."""
     libs = {}
     for key, info in (state.get("libraryScripts") or {}).items():
         stem = str(info.get("name") or key).removesuffix(".py")
@@ -64,11 +70,19 @@ def save_libraries(state: dict) -> dict:
     return libs
 
 
+def at_lib_tier(tier: str) -> bool:
+    """True when scripts_sync.build_index() would merge autoplay/ at this tier: below it the
+    game refuses Libraries (research_required), so autoplay/ is neither staged nor detected."""
+    number = sync.tier_number(tier)
+    return number is not None and number >= sync.LIB_UNLOCK_TIER_NUMBER
+
+
 def autoplay_content(state: dict, script_index: dict, lib_index: dict, autoplay_dir: Path = sync.AUTOPLAY_DIR):
     """(slots, libs) of the save that are autoplay content: slots as [(stem, role)] whose code
     resolves to an autoplay/*.py (sync.source_for() over autoplay/ alone), libs as the save's
-    lib/ module stems named like an autoplay/lib/*.py. script_index/lib_index are the tier's,
-    before merge_autoplay(): a key scripts/ resolves stays scripts/ content, as there."""
+    lib/ module stems whose match_key() names an autoplay/lib/*.py (merge_autoplay()'s keys).
+    script_index/lib_index are the tier's, before merge_autoplay(): a key scripts/ resolves
+    stays scripts/ content, as there. Callers apply the lib-tier gate (at_lib_tier())."""
     ap_scripts, ap_libs = {}, {}
     sync.merge_autoplay(autoplay_dir, ap_scripts, ap_libs, {})
     slots = []
@@ -79,7 +93,9 @@ def autoplay_content(state: dict, script_index: dict, lib_index: dict, autoplay_
         source, _ = sync.source_for(stem, current, ap_scripts)
         if source is not None and sync.match_key(source.stem) not in script_index:
             slots.append((stem, source.stem))
-    libs = sorted(s for s in save_libraries(state) if s in ap_libs and s not in lib_index)
+    libs = sorted(
+        s for s in save_libraries(state) if sync.match_key(s) in ap_libs and sync.match_key(s) not in lib_index
+    )
     return slots, libs
 
 
@@ -143,7 +159,7 @@ def slot_body(stem: str, current: str, index: dict):
 def main() -> int:
     parser = argparse.ArgumentParser(description="Resolve the repo's current scripts for every script slot of a save.")
     parser.add_argument("--save", required=True, type=Path, help="save_<id>.json or .json.gz")
-    parser.add_argument("--out", required=True, type=Path, help="directory for <slot>.py and lib/")
+    parser.add_argument("--out", type=Path, help="directory for <slot>.py and lib/ (required unless --check)")
     parser.add_argument("--scripts-dir", type=Path, default=sync.DEFAULT_SCRIPTS)
     parser.add_argument("--tier", help="active tier (default: the one the save's progress meets)")
     autoplay = parser.add_mutually_exclusive_group()
@@ -158,19 +174,39 @@ def main() -> int:
         help="load none of the save's autoplay content: its slots get an empty script, its lib modules are "
         f"listed in DIR/lib/{STRIP_MANIFEST} for run.mjs --strip-autoplay to drop",
     )
+    autoplay.add_argument(
+        "--check",
+        action="store_true",
+        help="only print the stale-autoplay warning (stderr), write nothing: run.mjs runs this for --save runs "
+        "that stage their own scripts (--scripts, --libs, --deploy-templates, --policy)",
+    )
+    parser.add_argument("--staged-scripts", type=Path, help="with --check: <slot>.py files here replace the save's")
+    parser.add_argument("--staged-libs", type=Path, help="with --check: lib modules here replace the save's")
+    parser.add_argument("--autoplay-dir", type=Path, default=sync.AUTOPLAY_DIR, help="autoplay/ root (tests)")
     args = parser.parse_args()
+    if not args.check and args.out is None:
+        parser.error("--out is required unless --check")
 
     save = load_save(args.save)
     state = save.get("state", save)
     tiers = sync.discover_tiers(args.scripts_dir)
     tier = args.tier or sync.tier_for_state(args.scripts_dir, tiers, sync.summarize_state(state))
     script_index, lib_index, conflicts = sync.build_index(args.scripts_dir, tier)
-    ap_slots, ap_libs = autoplay_content(state, script_index, lib_index)
-    if args.include_autoplay:
-        sync.merge_autoplay(sync.AUTOPLAY_DIR, script_index, lib_index, conflicts)
-    elif not args.strip_autoplay and (ap_slots or ap_libs):
+    # Same lib-tier gate as scripts_sync.build_index(): below it autoplay/ is neither staged nor detected.
+    gated = at_lib_tier(tier)
+    ap_slots, ap_libs = autoplay_content(state, script_index, lib_index, args.autoplay_dir) if gated else ([], [])
+    if args.check:
+        staged = {p.stem for p in args.staged_scripts.glob("*.py")} if args.staged_scripts else set()
+        staged_libs = {p.stem for p in args.staged_libs.glob("*.py")} if args.staged_libs else set()
+        ap_slots = [(stem, role) for stem, role in ap_slots if stem not in staged]
+        ap_libs = [stem for stem in ap_libs if stem not in staged_libs]
+    if args.include_autoplay and gated:
+        sync.merge_autoplay(args.autoplay_dir, script_index, lib_index, conflicts)
+    elif not (args.include_autoplay or args.strip_autoplay) and (ap_slots or ap_libs):
         for line in autoplay_warning(ap_slots, ap_libs):
             print(line, file=sys.stderr)
+    if args.check:
+        return 0
 
     if args.out.exists():
         shutil.rmtree(args.out)

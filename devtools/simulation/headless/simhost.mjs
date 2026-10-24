@@ -439,15 +439,16 @@ function replaceLibraries(state, libs) {
   return { replaced, added };
 }
 
-// Removes the named lib/ modules from a save (run.mjs --strip-autoplay), matched by
-// key or by the entry's `<name>.py`; returns the stems removed.
+// Removes the named lib/ modules from a save (run.mjs --strip-autoplay), matched by the
+// entry's `<name>.py` (its key only when it has none), as save_scripts.py's
+// save_libraries() names them; returns the stems removed.
 export function dropLibraries(state, names) {
   const entries = state.libraryScripts ?? {};
   const gone = new Set(names);
   const dropped = [];
   for (const [key, entry] of Object.entries(entries)) {
-    const stem = String(entry?.name ?? key).replace(/\.py$/, "");
-    if (gone.has(stem) || gone.has(key)) {
+    const stem = String(entry?.name || key).replace(/\.py$/, "");
+    if (gone.has(stem)) {
       delete entries[key];
       dropped.push(stem);
     }
