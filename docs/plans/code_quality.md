@@ -106,7 +106,7 @@ so step 2 is needed.
 | `CALL_FAILED_STATUSES` handling (2026-10-24) | `early_buyer` stops the pass after a call-failed undeploy; `fleet_decommission` leaves the script stopped on a call-failed undeploy (as the drone swap does) but restarts it on a refusal; `building_ops.TRANSIENT_STATUSES` spreads the one definition | helpers-impl-3 |
 
 ## Open candidates
-Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. All ranked families landed in Phases 1-3 (helpers-impl-1 to 3); the Done table lists them, [helpers_handoff.md](done/helpers_handoff.md) the leftovers.
+Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](done/helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](done/helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. All ranked families landed in Phases 1-3 (helpers-impl-1 to 3); the Done table lists them, [helpers_handoff.md](done/helpers_handoff.md) the leftovers.
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,
@@ -179,7 +179,7 @@ Rod yield must end above the first shedding line.
   `TickCache`.
 
 ## Next sweep
-Ran 2026-10-23: four harvest angles (scan pairs now including `autoplay/` and short functions, game API anchors, bypassed discovery, known families refresh), merged and judged in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md). Plan: [helpers_sweep.md](done/helpers_sweep.md). The families that earlier notes listed here (archive read/validate wrappers, per-outpost building filters, `research.is_unlocked`, `_dist`, the recipe BFS) are all judged there. Before another harvest, land the ranked families above and list them as done in the harvester briefs.
+Ran 2026-10-23: four harvest angles (scan pairs now including `autoplay/` and short functions, game API anchors, bypassed discovery, known families refresh), merged and judged in [helpers_sweep_candidates.md](done/helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](done/helpers_sweep_candidates_2.md). Plan: [helpers_sweep.md](done/helpers_sweep.md). The families that earlier notes listed here (archive read/validate wrappers, per-outpost building filters, `research.is_unlocked`, `_dist`, the recipe BFS) are all judged there. Before another harvest, land the ranked families above and list them as done in the harvester briefs.
 
 Still unswept (the "Harvest gaps" of the candidates file):
 - `clone_scan` clusters c32 (~90 one-line accessors) and c72 were checked only for the listed families; stub bodies (`NotImplementedError`, default hooks) were skipped.

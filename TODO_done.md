@@ -695,3 +695,12 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 - [x] Phase 12: power `trim` `stopMargin` `step` (the second-stop band is the cut generator's own rating; A/B on 1220 with the open floor rows). Handoff: [docs/plans/done/headless_phase13_handoff.md](docs/plans/done/headless_phase13_handoff.md).
 - [x] Phase 13: power `trim` refused stops (`#stop` reads the command result; a refused generator stays kept) and the open rows (`reevalTicks` 300 with `stopMargin` 1.25; a warm-up past the day peak: no stop, no drift; the `spire_25` shortfall does not come back). Handoff: [docs/plans/done/headless/headless_phase14_handoff.md](docs/plans/done/headless/headless_phase14_handoff.md).
 - [x] Phase 14: left-over sweep (a stopped or undeployed script's archive records go, by shape: id-keyed entries, owner fields, `<prefix>.<id>` keys; live writers detected), revival guard, script-set profile (`profiles/code_terraform.json`, `--script-set none` for a foreign script set), A/B on the 1631 factory rows ([ab_results.md](docs/headless/ab_results.md) "Phase 14"). Handoff: [docs/plans/headless_phase15_handoff.md](docs/plans/headless_phase15_handoff.md).
+
+## 🧼 Code Quality (2026-10-22)
+
+Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md).
+
+- [x] Helpers: land the sweep families, one session per phase ([helpers_sweep_impl.md](docs/plans/done/helpers_sweep_impl.md)).
+  - [x] Phase 1: drift-bugs (spiral, unsupported merge), `archive.get_dict`, `components.research_unlocked`, `components.outposts()`.
+  - [x] Phase 2: `archive.mutate` / `pop_entries` / `dict_entry`, `safe_call`, shop prices, per-outpost lookups, `dist` / `now_tick`.
+  - [x] Phase 3: depot walks, part 2 small families, singles, deferred review minors.

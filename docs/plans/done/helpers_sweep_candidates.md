@@ -1,6 +1,6 @@
 # Helper sweep: candidate families (judged)
 
-Candidates for [helpers_sweep.md](done/helpers_sweep.md), merged 2026-10-23 from four harvest angles, judged the same day (Task 3: every site re-read; wrong lines corrected in place). No code was changed. Part 2, [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md), holds the small families, the `keep?` pairs, the harvest gaps and the families the judge found on its own; the `## Ranking` at the end of this file covers both parts.
+Candidates for [helpers_sweep.md](helpers_sweep.md), merged 2026-10-23 from four harvest angles, judged the same day (Task 3: every site re-read; wrong lines corrected in place). No code was changed. Part 2, [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md), holds the small families, the `keep?` pairs, the harvest gaps and the families the judge found on its own; the `## Ranking` at the end of this file covers both parts.
 
 Angles (the `Found by` letters):
 - **A** scan pairs: `devtools/code_scan/clone_scan.py --min-ratio 0.85 --min-lines 3 --top 0` (130 clusters, all triaged).

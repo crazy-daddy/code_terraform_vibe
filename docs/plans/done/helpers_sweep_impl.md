@@ -218,24 +218,34 @@ Worktree `helpers-impl-3`.
 
 ### Task 3.1: depot walks (rank 13)
 
+Landed (9d81e3b1..9931c9ef). `fleet_upgrade._depots` stayed apart (Decision above).
+
 Spec family: "Depot walks". Merge onto `drone_depots.discover_drone_depots`; `fleet_upgrade._advance_depot` stays apart unless a fresh read exists (see Decisions). Test: a depot deployed in the same tick is seen by `_advance_depot`.
 
 ### Task 3.2: part 2 small families (rank 14)
+
+Landed (effb43dd..dce2c393). `ap/outpost_needs.read_outposts` stayed apart.
 
 Spec: part 2 "Small families" marked merge, plus "Per-outpost building type counts" (`components.building_type_counts(outpost) -> dict[str, int]`, `{}` on a raised walk). One commit per family; each new helper gets one test for its contract.
 
 ### Task 3.3: remaining singles (rank 15) and the solar nit (rank 16)
 
+Landed (d2472246..d5e758c8). `water_sink._water_tanks` stayed apart.
+
 Spec: the singles listed in ranking item 15; `s0/power/solar.py` drops the id-variant loop (:98-106) and the import-time bind (tier 0, no helper).
 
 ### Task 3.4: deferred minors and the open notify candidate
 
-- `early_buyer` keeps calling undeploy after a call failure in one pass: stop the pass on a `CALL_FAILED_STATUSES` result; test it.
-- Decommission restarts the script on every wait pass while the drone swap leaves it stopped: read both flows, pick one behavior, record the reason in `docs/design_history/`, test it.
-- `building_ops` lists `error` / `no_computer` twice: one definition.
-- `docs/cheatsheet/fabricator_demand.md:52` omits `staged_units(item)`: add it.
-- The 10 guarded raw `notify()` sites (`docs/plans/code_quality.md` "Open candidates"): judge, then merge or record as keep.
+Landed (309c906f..503175d1).
+
+- [x] `early_buyer` keeps calling undeploy after a call failure in one pass: stop the pass on a `CALL_FAILED_STATUSES` result; test it.
+- [x] Decommission restarts the script on every wait pass while the drone swap leaves it stopped: read both flows, pick one behavior, record the reason in `docs/design_history/`, test it.
+- [x] `building_ops` lists `error` / `no_computer` twice: one definition.
+- [x] `docs/cheatsheet/fabricator_demand.md:52` omits `staged_units(item)`: add it.
+- [x] The 10 guarded raw `notify()` sites (`docs/plans/code_quality.md` "Open candidates"): judge, then merge or record as keep.
 
 ### Task 3.5: Phase close
+
+Landed (docs commits after 503175d1).
 
 As Task 1.7; then move this plan, both candidate files and the TODO item to `done/` / `TODO_done.md`.
