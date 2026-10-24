@@ -67,7 +67,15 @@
 // --include-autoplay     stage autoplay/ too (planner libs via save_scripts.py, the planner
 //                        Automation created after load), as scripts_sync --include-autoplay;
 //                        with --libs, that dir must already hold autoplay/lib (save_scripts.py
-//                        --include-autoplay, as tick_profile.py stages it)
+//                        --include-autoplay, as tick_profile.py stages it). Without it, a save
+//                        that holds autoplay libs or slots runs their stale copies: every --save
+//                        run but --as-saved warns and names those not replaced (save_scripts.py,
+//                        --check when the run stages its own scripts)
+// --strip-autoplay       load none of the save's autoplay content: its slots get an empty
+//                        script, its autoplay lib modules are dropped from the loaded copy (the
+//                        save file stays as is); slots or libs still importing one are reported.
+//                        With --libs, that dir needs save_scripts.py --strip-autoplay's
+//                        strip_autoplay.json. Excludes --include-autoplay
 // --auto-approve N       every N ticks add OK to the outpost suggestion markers and approve the
 //                        open BUILD-card proposals ([approve] lines in console.log)
 
@@ -108,21 +116,25 @@ const { values: a } = parseArgs({
     "as-saved": { type: "boolean" },
     "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
     scenario: { type: "string" }, standin: { type: "string", multiple: true }, "script-set": { type: "string" },
-    "include-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
+    "include-autoplay": { type: "boolean" }, "strip-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
   },
 });
+if (a["include-autoplay"] && a["strip-autoplay"]) throw new Error("--include-autoplay and --strip-autoplay exclude each other");
+const autoplayFlag = a["include-autoplay"] ? ["--include-autoplay"] : a["strip-autoplay"] ? ["--strip-autoplay"] : [];
 
 // --save runs the repo's current scripts unless the caller brings its own or asks for the save's.
 // Policy and deploy runs manage their scripts themselves (checkpoints keep their buyer state).
+const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const VENV_PY = join(REPO, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+const SAVE_SCRIPTS = join(REPO, "devtools", "simulation", "headless", "save_scripts.py");
+const python = (args) => spawnSync(existsSync(VENV_PY) ? VENV_PY : "python", [SAVE_SCRIPTS, ...args], { encoding: "utf8" });
 let stagedDefault = false;
 if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] && !a.policy) {
-  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const venv = join(repo, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
   const dir = a.out ? join(a.out, "latest_scripts") : mkdtempSync(join(tmpdir(), "latest_scripts-"));
-  const r = spawnSync(existsSync(venv) ? venv : "python",
-    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir, ...(a["include-autoplay"] ? ["--include-autoplay"] : [])],
-    { encoding: "utf8" });
+  const r = python(["--save", a.save, "--out", dir, ...autoplayFlag]);
   if (r.status !== 0) throw new Error(`save_scripts.py failed (--as-saved runs the save's scripts):\n${r.stderr || r.error}`);
+  // Autoplay warnings and strips (stderr): stale autoplay copies, stripped slots and libs.
+  for (const l of (r.stderr ?? "").split("\n")) if (l.trim()) console.warn(l.trimEnd());
   // Slots with no source in scripts/ (contracts, Playground code) keep the save's code quietly.
   const lines = r.stdout.trim().split("\n");
   console.log(`latest scripts: ${lines.at(-1)}`);
@@ -130,6 +142,24 @@ if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] 
   a.scripts = dir;
   a.libs = join(dir, "lib");
   stagedDefault = true;
+} else if (a.save && !a["as-saved"] && !a["include-autoplay"] && !a["strip-autoplay"]) {
+  // Own staging (--scripts, --libs, --deploy-templates, --policy): the save's autoplay content
+  // not replaced there still runs stale; save_scripts.py --check names it. --as-saved asks for
+  // the save's own code, so it stays quiet.
+  const r = python(["--save", a.save, "--check",
+    ...(a.scripts ? ["--staged-scripts", a.scripts] : []), ...(a.libs ? ["--staged-libs", a.libs] : [])]);
+  if (r.status !== 0) console.warn(`save_scripts.py --check failed:\n${r.stderr || r.error}`);
+  else for (const l of (r.stderr ?? "").split("\n")) if (l.trim()) console.warn(l.trimEnd());
+}
+
+// --strip-autoplay: the save's autoplay lib modules, as save_scripts.py --strip-autoplay listed them.
+let dropLibs;
+if (a["strip-autoplay"]) {
+  const manifest = a.libs && join(a.libs, "strip_autoplay.json");
+  if (!a.save || !manifest || !existsSync(manifest)) {
+    throw new Error("--strip-autoplay needs --save with the default staging or a --libs dir staged by save_scripts.py --strip-autoplay (strip_autoplay.json)");
+  }
+  dropLibs = JSON.parse(readFileSync(manifest, "utf8")).libs ?? [];
 }
 
 function parseLogLevels(arg) {
@@ -149,7 +179,8 @@ const sim = await Sim.create({
 const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsWith(".py"))
   .map(f => [basename(f, ".py"), readFileSync(join(a.libs, f), "utf8")])) : undefined;
 if (a.save) {
-  sim.load(readSaveText(a.save), { libs });
+  sim.load(readSaveText(a.save), { libs, dropLibs });
+  if (sim.droppedLibraries) console.log(`autoplay stripped: ${sim.droppedLibraries.length} lib module(s) dropped`);
   if (sim.libraries) console.log(`libs: ${sim.libraries.replaced.length} replaced` +
     (sim.libraries.added.length ? `, added: ${sim.libraries.added.join(", ")}` : ""));
 } else {
@@ -208,8 +239,7 @@ if (a["include-autoplay"]) {
   if (!stagedDefault && !existsSync(join(a.libs, "outpost_plan.py"))) {
     throw new Error(`--include-autoplay: --libs ${a.libs} has no autoplay lib (outpost_plan.py); stage it with save_scripts.py --include-autoplay`);
   }
-  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const src = readFileSync(join(repo, "autoplay", "infra_planner_automation.py"), "utf8").replace(/\$\{(\w+)(?::([^}]*))?\}/g, (_, _name, def) => def ?? "");
+  const src = readFileSync(join(REPO, "autoplay", "infra_planner_automation.py"), "utf8").replace(/\$\{(\w+)(?::([^}]*))?\}/g, (_, _name, def) => def ?? "");
   const r = sim.createAutomation(src);
   console.log(`autoplay: infra_planner_automation -> ${r.scriptId ?? "-"}: ${r.status}`);
 }

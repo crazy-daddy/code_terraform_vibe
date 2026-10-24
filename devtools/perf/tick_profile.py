@@ -302,6 +302,13 @@ def main():
         "wrapped, the save's autoplay slots get current code and the planner Automation runs",
     )
     parser.add_argument(
+        "--strip-autoplay",
+        action="store_true",
+        help="load none of the save's autoplay content (save_scripts.py and run.mjs --strip-autoplay): its slots "
+        "get an empty script, its autoplay lib modules are dropped from the run; excludes --include-autoplay "
+        "and --preset founding",
+    )
+    parser.add_argument(
         "--chunk-scale",
         type=float,
         default=1.0,
@@ -334,7 +341,9 @@ def main():
         if getattr(args, key) is None:
             setattr(args, key, preset[key])
     args.include_autoplay = args.include_autoplay or preset["include_autoplay"]
-    autoplay = ["--include-autoplay"] if args.include_autoplay else []
+    if args.include_autoplay and args.strip_autoplay:
+        parser.error("--strip-autoplay excludes --include-autoplay (and --preset founding, which implies it)")
+    autoplay = ["--include-autoplay"] if args.include_autoplay else ["--strip-autoplay"] if args.strip_autoplay else []
 
     if args.summarize:
         summarize(args.summarize, args.top, args.min_total, args.filter)
