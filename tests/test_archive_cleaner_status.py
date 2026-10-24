@@ -157,6 +157,27 @@ class DictKeyHelperTests(harness.StubTestCase):
         self.assertEqual(list(data[MINING_REACH_KEY]), ["rover_1"])
 
 
+class PruneFleetDictTests(harness.StubTestCase):
+    """_prune_fleet_dict(): stale vehicles and malformed payloads of one fleet-keyed dict, with the count."""
+
+    def test_prunes_stale_and_malformed_and_counts(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = {"rover_1": {"r": 1}, "rover_2": {"r": 1}, "rover_3": {}, "rover_4": "junk"}
+        cleaner = ArchiveCleaner(dry_run=False, verbose=False)
+        self.assertEqual(
+            cleaner._prune_fleet_dict(MINING_REACH_KEY, {"rover_1", "rover_3", "rover_4"}, "DELETE MINING REACH"), 3
+        )
+        self.assertEqual(list(data[MINING_REACH_KEY]), ["rover_1"])
+
+    def test_empty_fleet_keeps_well_formed_and_junk_key_counts_one(self):
+        data = self.world.notebook.data
+        data[MINING_REACH_KEY] = {"rover_1": {"r": 1}}
+        cleaner = ArchiveCleaner(dry_run=False, verbose=False)
+        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH"), 0)
+        data[MINING_REACH_KEY] = ["junk"]
+        self.assertEqual(cleaner._prune_fleet_dict(MINING_REACH_KEY, set(), "DELETE MINING REACH"), 1)
+
+
 class KeyCoordsTests(unittest.TestCase):
     """unsupported_markers.key_coords(): one parser for 'poi_X_Y' and legacy 'X:Y' keys."""
 
