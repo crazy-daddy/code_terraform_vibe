@@ -70,7 +70,7 @@ from game_clock import is_fresh
 from logistics_requests import PICKUP_STALE_TICKS, drone_yield_enabled
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
-from swallow import swallowed
+from swallow import safe_call, swallowed
 
 ROLE_DEMAND_KEY = "fleet.role_demand"  # = role_demand.ROLE_DEMAND_KEY
 ROLE_DEMAND_STALE_TICKS = 3000  # = role_demand.ROLE_DEMAND_STALE_TICKS
@@ -584,11 +584,7 @@ def pioneer_missions(tick):
 
 def _safe(name, read, default):
     """read(), or default when it raises (one failing reader must not drop every provider)."""
-    try:
-        return read()
-    except Exception as error:
-        swallowed("building_plan.build_context: " + name, error)
-        return default
+    return safe_call("building_plan.build_context: " + name, read, default)
 
 
 def read_prices():

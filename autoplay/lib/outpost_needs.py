@@ -104,7 +104,7 @@ from logistics_requests import drone_yield_enabled
 from outpost_mining import resource_assignment_range_m
 from storage import PENALIZED_TYPES
 from supply_tiers import NEAR_TILES, fluid_sites, gap
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from wildlife_common import FEED_KEY, recipe_of
 from wildlife_data import SPECIES
 
@@ -632,11 +632,7 @@ def log_plan(log: "TreeConsole", open_needs, plan):
 
 def _call(name: str, read: "Callable[[], _T]", default: "_T") -> "_T":
     """read(), or default when it raises. A lambda, not a method name, so Pyright sees the call and its type."""
-    try:
-        return read()
-    except Exception as error:
-        swallowed("outpost_needs._call: " + name, error)
-        return default
+    return safe_call("outpost_needs._call: " + name, read, default)
 
 
 def read_outposts(roles_map):
