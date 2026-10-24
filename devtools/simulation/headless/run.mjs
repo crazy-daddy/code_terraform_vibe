@@ -67,7 +67,14 @@
 // --include-autoplay     stage autoplay/ too (planner libs via save_scripts.py, the planner
 //                        Automation created after load), as scripts_sync --include-autoplay;
 //                        with --libs, that dir must already hold autoplay/lib (save_scripts.py
-//                        --include-autoplay, as tick_profile.py stages it)
+//                        --include-autoplay, as tick_profile.py stages it). Without it, a save
+//                        that holds autoplay libs or slots runs their stale copies: the default
+//                        --save staging warns and names them
+// --strip-autoplay       load none of the save's autoplay content: its slots get an empty
+//                        script, its autoplay lib modules are dropped from the loaded copy (the
+//                        save file stays as is); slots or libs still importing one are reported.
+//                        With --libs, that dir needs save_scripts.py --strip-autoplay's
+//                        strip_autoplay.json. Excludes --include-autoplay
 // --auto-approve N       every N ticks add OK to the outpost suggestion markers and approve the
 //                        open BUILD-card proposals ([approve] lines in console.log)
 
@@ -108,9 +115,11 @@ const { values: a } = parseArgs({
     "as-saved": { type: "boolean" },
     "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
     scenario: { type: "string" }, standin: { type: "string", multiple: true }, "script-set": { type: "string" },
-    "include-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
+    "include-autoplay": { type: "boolean" }, "strip-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
   },
 });
+if (a["include-autoplay"] && a["strip-autoplay"]) throw new Error("--include-autoplay and --strip-autoplay exclude each other");
+const autoplayFlag = a["include-autoplay"] ? ["--include-autoplay"] : a["strip-autoplay"] ? ["--strip-autoplay"] : [];
 
 // --save runs the repo's current scripts unless the caller brings its own or asks for the save's.
 // Policy and deploy runs manage their scripts themselves (checkpoints keep their buyer state).
@@ -120,9 +129,11 @@ if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] 
   const venv = join(repo, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
   const dir = a.out ? join(a.out, "latest_scripts") : mkdtempSync(join(tmpdir(), "latest_scripts-"));
   const r = spawnSync(existsSync(venv) ? venv : "python",
-    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir, ...(a["include-autoplay"] ? ["--include-autoplay"] : [])],
+    [join(repo, "devtools", "simulation", "headless", "save_scripts.py"), "--save", a.save, "--out", dir, ...autoplayFlag],
     { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`save_scripts.py failed (--as-saved runs the save's scripts):\n${r.stderr || r.error}`);
+  // Autoplay warnings and strips (stderr): stale autoplay copies, stripped slots and libs.
+  for (const l of (r.stderr ?? "").split("\n")) if (l.trim()) console.warn(l.trimEnd());
   // Slots with no source in scripts/ (contracts, Playground code) keep the save's code quietly.
   const lines = r.stdout.trim().split("\n");
   console.log(`latest scripts: ${lines.at(-1)}`);
@@ -130,6 +141,16 @@ if (a.save && !a["as-saved"] && !a.scripts && !a.libs && !a["deploy-templates"] 
   a.scripts = dir;
   a.libs = join(dir, "lib");
   stagedDefault = true;
+}
+
+// --strip-autoplay: the save's autoplay lib modules, as save_scripts.py --strip-autoplay listed them.
+let dropLibs;
+if (a["strip-autoplay"]) {
+  const manifest = a.libs && join(a.libs, "strip_autoplay.json");
+  if (!a.save || !manifest || !existsSync(manifest)) {
+    throw new Error("--strip-autoplay needs --save with the default staging or a --libs dir staged by save_scripts.py --strip-autoplay (strip_autoplay.json)");
+  }
+  dropLibs = JSON.parse(readFileSync(manifest, "utf8")).libs ?? [];
 }
 
 function parseLogLevels(arg) {
@@ -149,7 +170,8 @@ const sim = await Sim.create({
 const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsWith(".py"))
   .map(f => [basename(f, ".py"), readFileSync(join(a.libs, f), "utf8")])) : undefined;
 if (a.save) {
-  sim.load(readSaveText(a.save), { libs });
+  sim.load(readSaveText(a.save), { libs, dropLibs });
+  if (sim.droppedLibraries) console.log(`autoplay stripped: ${sim.droppedLibraries.length} lib module(s) dropped`);
   if (sim.libraries) console.log(`libs: ${sim.libraries.replaced.length} replaced` +
     (sim.libraries.added.length ? `, added: ${sim.libraries.added.join(", ")}` : ""));
 } else {

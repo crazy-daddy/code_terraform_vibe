@@ -439,6 +439,22 @@ function replaceLibraries(state, libs) {
   return { replaced, added };
 }
 
+// Removes the named lib/ modules from a save (run.mjs --strip-autoplay), matched by
+// key or by the entry's `<name>.py`; returns the stems removed.
+export function dropLibraries(state, names) {
+  const entries = state.libraryScripts ?? {};
+  const gone = new Set(names);
+  const dropped = [];
+  for (const [key, entry] of Object.entries(entries)) {
+    const stem = String(entry?.name ?? key).replace(/\.py$/, "");
+    if (gone.has(stem) || gone.has(key)) {
+      delete entries[key];
+      dropped.push(stem);
+    }
+  }
+  return dropped.sort();
+}
+
 // The game's UI thread (main-*.js), not the worker, places a world's sources:
 // a new game runs vents then exotic deposits; every load then runs vents,
 // fluid wells, exotic deposits and geological anomalies, each skipped when its
@@ -524,8 +540,10 @@ export class Sim {
   // Accepts the game's save_<id>.json text or object; running scripts resume.
   // opts.libs: {module name: source} replacing the save's lib/ modules
   // (replaceLibraries()); the outcome is kept in this.libraries.
-  load(saveJson, { libs } = {}) {
+  // opts.dropLibs: module names removed from the loaded copy first (dropLibraries()).
+  load(saveJson, { libs, dropLibs } = {}) {
     const save = typeof saveJson === "string" ? JSON.parse(saveJson) : structuredClone(saveJson);
+    if (dropLibs?.length) this.droppedLibraries = dropLibraries(save.state ?? save, dropLibs);
     if (libs) this.libraries = replaceLibraries(save.state ?? save, libs);
     if (!this.keepDebug) clearDebugFlags(save.state ?? save);
     if (this.logLevels) setLogLevels(save.state ?? save, this.logLevels);

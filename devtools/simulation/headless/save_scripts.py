@@ -15,9 +15,20 @@ high-water mark). A role marker naming a renamed role (RENAMED_ROLES) resolves t
 new role; a slot holding a removed role (RETIRED_ROLES) gets an empty script, so its old
 code doesn't run against the current libs. In game the player retypes or deletes those.
 run.mjs calls this by default for --save runs.
+
+Autoplay content of the save (lib/ modules named like an autoplay/lib/*.py, slots that
+resolve to an autoplay/*.py the way scripts_sync.py resolves them) is staged only with
+--include-autoplay. Without it, that content would run from the save's stale copies:
+a warning on stderr names it. --strip-autoplay loads none of it instead: its slots get
+an empty script and DIR/lib/strip_autoplay.json lists its lib modules, which run.mjs
+--strip-autoplay drops from the loaded save (the save file is never changed). A slot or
+lib module that still imports a stripped lib is reported.
+
+    save_scripts.py --save SAVE.json --out DIR [--include-autoplay | --strip-autoplay]
 """
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -38,6 +49,60 @@ RENAMED_ROLES = {
 # and hit the 10,000-step import cap at load in tick_profile runs.
 RETIRED_ROLES = {"drones_panel", "fleet_commission_panel", "outpost_planner_automation"}
 RETIRED_BODY = "# Retired role {role}: save_scripts.py leaves this slot empty for the headless run.\n"
+STRIPPED_BODY = (
+    "# Autoplay role {role}: save_scripts.py --strip-autoplay leaves this slot empty for the headless run.\n"
+)
+STRIP_MANIFEST = "strip_autoplay.json"  # in DIR/lib: the autoplay lib modules run.mjs --strip-autoplay drops
+
+
+def save_libraries(state: dict) -> dict:
+    """Module stem -> source of every lib/ module the save holds (state.libraryScripts)."""
+    libs = {}
+    for key, info in (state.get("libraryScripts") or {}).items():
+        stem = str(info.get("name") or key).removesuffix(".py")
+        libs[stem] = info.get("source") or ""
+    return libs
+
+
+def autoplay_content(state: dict, script_index: dict, lib_index: dict, autoplay_dir: Path = sync.AUTOPLAY_DIR):
+    """(slots, libs) of the save that are autoplay content: slots as [(stem, role)] whose code
+    resolves to an autoplay/*.py (sync.source_for() over autoplay/ alone), libs as the save's
+    lib/ module stems named like an autoplay/lib/*.py. script_index/lib_index are the tier's,
+    before merge_autoplay(): a key scripts/ resolves stays scripts/ content, as there."""
+    ap_scripts, ap_libs = {}, {}
+    sync.merge_autoplay(autoplay_dir, ap_scripts, ap_libs, {})
+    slots = []
+    for stem, entry in sorted(state.get("scripts", {}).items()):
+        current, retired = migrate_marker(stem, entry.get("source") or "")
+        if retired or not current.strip():
+            continue
+        source, _ = sync.source_for(stem, current, ap_scripts)
+        if source is not None and sync.match_key(source.stem) not in script_index:
+            slots.append((stem, source.stem))
+    libs = sorted(s for s in save_libraries(state) if s in ap_libs and s not in lib_index)
+    return slots, libs
+
+
+def autoplay_warning(slots: list, libs: list) -> list:
+    """Lines naming what a run without --include-autoplay runs from the save's stale copies."""
+    lines = ["  warn  save holds autoplay content; without --include-autoplay it runs from the save's stale copies:"]
+    if libs:
+        lines.append("  warn    lib/: " + ", ".join(libs))
+    if slots:
+        lines.append("  warn    slots: " + ", ".join(f"{stem} ({role})" for stem, role in slots))
+    lines.append("  warn  pass --include-autoplay (stage the repo's autoplay/) or --strip-autoplay (load none of it)")
+    return lines
+
+
+def stripped_importers(sources: dict, stripped: list) -> list:
+    """[(name, [stripped libs it imports])] for the sources {name: code} left after a strip."""
+    gone = set(stripped)
+    hits = []
+    for name, code in sorted(sources.items()):
+        used = sorted(sync.parse_module_imports(code) & gone)
+        if used:
+            hits.append((name, used))
+    return hits
 
 
 def migrate_marker(stem: str, current: str):
@@ -81,10 +146,17 @@ def main() -> int:
     parser.add_argument("--out", required=True, type=Path, help="directory for <slot>.py and lib/")
     parser.add_argument("--scripts-dir", type=Path, default=sync.DEFAULT_SCRIPTS)
     parser.add_argument("--tier", help="active tier (default: the one the save's progress meets)")
-    parser.add_argument(
+    autoplay = parser.add_mutually_exclusive_group()
+    autoplay.add_argument(
         "--include-autoplay",
         action="store_true",
         help="also index autoplay/ (planner scripts, autoplay/lib modules), as scripts_sync --include-autoplay does",
+    )
+    autoplay.add_argument(
+        "--strip-autoplay",
+        action="store_true",
+        help="load none of the save's autoplay content: its slots get an empty script, its lib modules are "
+        f"listed in DIR/lib/{STRIP_MANIFEST} for run.mjs --strip-autoplay to drop",
     )
     args = parser.parse_args()
 
@@ -93,8 +165,12 @@ def main() -> int:
     tiers = sync.discover_tiers(args.scripts_dir)
     tier = args.tier or sync.tier_for_state(args.scripts_dir, tiers, sync.summarize_state(state))
     script_index, lib_index, conflicts = sync.build_index(args.scripts_dir, tier)
+    ap_slots, ap_libs = autoplay_content(state, script_index, lib_index)
     if args.include_autoplay:
         sync.merge_autoplay(sync.AUTOPLAY_DIR, script_index, lib_index, conflicts)
+    elif not args.strip_autoplay and (ap_slots or ap_libs):
+        for line in autoplay_warning(ap_slots, ap_libs):
+            print(line, file=sys.stderr)
 
     if args.out.exists():
         shutil.rmtree(args.out)
@@ -102,10 +178,16 @@ def main() -> int:
     for name, path in sorted(lib_index.items()):
         shutil.copyfile(path, args.out / "lib" / (name + ".py"))
 
+    stripped = dict(ap_slots) if args.strip_autoplay else {}
+    remaining = {}  # name -> code each kept slot and lib module runs, for the stripped-import check
     written = same = 0
     for stem, entry in sorted(state.get("scripts", {}).items()):
         current = entry.get("source") or ""
-        body, note = slot_body(stem, current, script_index)
+        if stem in stripped:
+            body, note = STRIPPED_BODY.format(role=stripped[stem]), "stripped autoplay role " + stripped[stem]
+        else:
+            body, note = slot_body(stem, current, script_index)
+            remaining[stem] = current if body is None else body
         if body is None:
             if current.strip():
                 print(f"  skip  {stem!s:<28} {note}")
@@ -116,6 +198,16 @@ def main() -> int:
         (args.out / (stem + ".py")).write_text(body, encoding="utf-8", newline="\n")
         written += 1
         print(f"  push  {stem!s:<28}{(f'  [{note}]' if note else '')}")
+    if args.strip_autoplay:
+        (args.out / "lib" / STRIP_MANIFEST).write_text(json.dumps({"libs": ap_libs}) + "\n", encoding="utf-8")
+        for stem, role in ap_slots:
+            print(f"  strip {stem} ({role}): empty script", file=sys.stderr)
+        if ap_libs:
+            print("  strip lib/: " + ", ".join(ap_libs), file=sys.stderr)
+        kept = {f"lib/{s}": code for s, code in save_libraries(state).items() if s not in ap_libs}
+        kept.update({f"lib/{name}": sync.read(path) or "" for name, path in lib_index.items()})
+        for name, used in stripped_importers({**remaining, **kept}, ap_libs):
+            print(f"  warn  {name} imports stripped autoplay lib(s): {', '.join(used)}", file=sys.stderr)
     print(
         f"tier {tier}: {written} slot(s) written, {same} already current, {len(lib_index)} lib module(s) -> {args.out}"
     )
