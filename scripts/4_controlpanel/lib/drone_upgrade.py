@@ -234,6 +234,18 @@ def module_category(item_id):
     return "other"
 
 
+def category_ladder(category, role, engine):
+    """Tier ladder of a module category for a drone role and engine ("heli" takes oil tanks)."""
+    if category == "energy":
+        return OIL_TANK_TIERS if engine == "heli" else BATTERY_TIERS
+    if category == "cargo":
+        return CARGO_POD_TIERS
+    if category == "role":
+        item = ROLE_MODULE_ITEMS.get(role)
+        return [item] if item else []
+    return []
+
+
 def tier_ladder(item_id):
     """The tier ladder item_id sits on, or None (single-tier or untiered module)."""
     for ladder in (CARGO_POD_TIERS, OIL_TANK_TIERS):
@@ -278,16 +290,6 @@ class DroneUpgradeMixin:
             swallowed("drone_upgrade.DroneUpgradeMixin._unlocked_outputs: fabricator_unlocked_outputs", error)
             return set()
 
-    def _category_ladder(self, category, role):
-        if category == "energy":
-            return OIL_TANK_TIERS if self._host.engine == "heli" else BATTERY_TIERS
-        if category == "cargo":
-            return CARGO_POD_TIERS
-        if category == "role":
-            item = ROLE_MODULE_ITEMS.get(role)
-            return [item] if item else []
-        return []
-
     def _best_in_inventory(self, ladder):
         return best_tier(ladder, lambda item_id: inventory_count(item_id) > 0)
 
@@ -311,7 +313,7 @@ class DroneUpgradeMixin:
 
     def _slot_plan(self, role, kind, unlocked):
         """fit_slot_plan() sized for the best Battery Pack / Oil Tank this drone can get."""
-        energy_item = self._best_obtainable(self._category_ladder("energy", role), unlocked)
+        energy_item = self._best_obtainable(category_ladder("energy", role, self._host.engine), unlocked)
         return fit_slot_plan(role, kind, energy_item, self._host.engine)
 
     def _plated(self):
@@ -450,7 +452,7 @@ class DroneUpgradeMixin:
         for index, category in enumerate(self._slot_plan(role, kind, unlocked), start=1):
             if index not in slots or slots[index]:
                 continue
-            ladder = self._category_ladder(category, role)
+            ladder = category_ladder(category, role, self._host.engine)
             item_id = self._best_in_inventory(ladder)
             if item_id and self._couple(index, item_id) == "ok":
                 slots[index] = item_id
@@ -672,7 +674,7 @@ class DroneUpgradeMixin:
             if slots[index] or not missing:
                 continue
             category = missing[0]
-            ladder = self._category_ladder(category, role)
+            ladder = category_ladder(category, role, self._host.engine)
             item_id = self._best_in_inventory(ladder)
             if item_id and self._couple(index, item_id) == "ok":
                 slots[index] = item_id
