@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from construction_plan import DECONSTRUCT_KIND, HOLD_KEY, POWER_LINE_KIND, POWER_TILES_KEY, clean_power_ledger, empty_power_ledger, mark_power_dirty, power_rows_decode, power_rows_encode, swap_power_ledger
+from game_clock import now_tick
 from game_rules import TILE_M
 from grid_geom import tile_key, tile_xy
 from swallow import swallowed
@@ -42,12 +43,7 @@ _POWER_STATUSES = ("ok", "ambiguous_target", "already_queued")
 
 
 def _now_tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("power_survey._now_tick: clock.tick", error)
-        return 0
+    return now_tick("power_survey._now_tick: clock.tick")
 
 
 def _set_hold(tick):

@@ -19,6 +19,7 @@
 # pass when OutpostPlanner.due()) and the building pass every WATCH_SLEEP_S,
 # and the infrastructure passes again once a designation was written.
 
+from game_clock import now_tick
 from swallow import swallowed
 from tree_console import TreeConsole, flush_all, reset_all
 
@@ -34,12 +35,7 @@ IMPORT_YIELD_S = 0.1  # yield between the planner modules' import groups (each g
 
 
 def _tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("planner_loop._tick: clock.tick", error)
-        return 0
+    return now_tick("planner_loop._tick: clock.tick")
 
 
 def _phase(log: "TreeConsole", started, what):

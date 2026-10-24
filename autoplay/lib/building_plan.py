@@ -67,7 +67,7 @@ import pillar_swap
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
-from game_clock import is_fresh
+from game_clock import is_fresh, now_tick
 from logistics_requests import PICKUP_STALE_TICKS, drone_yield_enabled
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
@@ -94,12 +94,7 @@ TIERED_TYPES = build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES  
 
 
 def _tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("building_plan._tick: clock.tick", error)
-        return 0
+    return now_tick("building_plan._tick: clock.tick")
 
 
 # ---------- providers (pure) ----------

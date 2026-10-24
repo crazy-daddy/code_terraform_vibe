@@ -56,7 +56,7 @@ import survey_requests
 from archive import archive
 from atomic import run_batched
 from components import component
-from game_clock import is_fresh
+from game_clock import is_fresh, now_tick
 from game_rules import SMELT_PRODUCTS
 from geometry import dist
 from grid_geom import OUTPOST_PLACE_M, outpost_centre, tile_xy
@@ -505,12 +505,7 @@ def log_events(log: "TreeConsole", events, proposals):
 
 
 def _tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("outpost_plan._tick: clock.tick", error)
-        return 0
+    return now_tick("outpost_plan._tick: clock.tick")
 
 
 def load():
