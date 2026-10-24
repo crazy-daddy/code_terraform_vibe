@@ -2,7 +2,7 @@ import fluid_routing
 from archive import archive
 from building_ops import undeploy
 from retired_machines import release, retire, retired_ids, sell_kits
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from tree_console import TreeConsole
 
 # Biomass pillar retirement. The Biomass pillar owns a fixed 100,000 TP of
@@ -78,11 +78,7 @@ def retire_state():
 
 
 def _call(obj, method, default):
-    try:
-        return getattr(obj, method)()
-    except Exception as error:
-        swallowed("biomass_retire._call: getattr(obj, method)", error)
-        return default
+    return safe_call("biomass_retire._call: getattr(obj, method)", lambda: getattr(obj, method)(), default)
 
 
 def _input_count(liquifier):

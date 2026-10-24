@@ -2,7 +2,7 @@ import fluid_routing
 from archive import archive
 from game_rules import BIOMES
 from parking_client import PARKED_KEY
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from tree_console import TreeConsole, method_block
 
 # Biomass Mixer duty-cycle gate: pause a Mixer (breaker off) while one of its
@@ -160,11 +160,7 @@ class MixerGate:
 
     @staticmethod
     def _call(obj, method, default):
-        try:
-            return getattr(obj, method)()
-        except Exception as error:
-            swallowed("biomass_mixer_gate.MixerGate._call: getattr(obj, method)", error)
-            return default
+        return safe_call("biomass_mixer_gate.MixerGate._call: getattr(obj, method)", lambda: getattr(obj, method)(), default)
 
     def _port_reading(self, mixer, biome, tick):
         """(level_t, capacity_t, linked) for one essence input; linked = any non-broken connection,
