@@ -4,6 +4,9 @@
 //   node devtools/simulation/headless/run.mjs --save save_x.json --hours 4 --out out/run1
 //   node devtools/simulation/headless/run.mjs --save save_x.json --deploy-templates <dir> --until-tp 150000
 //
+// Env CT_SIMWORKER       path of deobfuscated.js (default: this checkout's internals/, else
+//                        the main checkout's, as in an agent worktree)
+//
 // --save FILE            game save_<id>.json (or .json.gz) to start from (running scripts resume).
 //                        By default its slots and lib/ get the repo's current scripts
 //                        (save_scripts.py into OUT/latest_scripts), unless --as-saved,

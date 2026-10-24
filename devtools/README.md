@@ -19,7 +19,7 @@ Gitignored state: `.sync-backups/` (sync backups, session holds, seed-swap backu
 
 ## Agent worktrees
 
-- `python devtools/agent_worktree.py new <topic>` creates `.claude/worktrees/<topic>` on branch `agent/<topic>`. It's local (no fetch). Sync holds don't apply there; edits never reach the save. Read untracked data such as `internals/` from the main checkout. Commit on the branch as you go.
+- `python devtools/agent_worktree.py new <topic>` creates `.claude/worktrees/<topic>` on branch `agent/<topic>`. It's local (no fetch). Sync holds don't apply there; edits never reach the save. Read untracked data such as `internals/` from the main checkout. Headless runs (`run.mjs` and every tool that starts it) find the simworker there by themselves (`simhost.mjs` asks git for the main checkout); `CT_SIMWORKER` overrides the path. Commit on the branch as you go.
 - Merge only after the user approves: `python devtools/agent_worktree.py merge <topic> -m "<subject>" [-m "<body>"]`. Write the message like any commit message (`CODE_GUIDES.md` → Commits), stating the branch's overall intent. It rebases the branch onto `main`, runs the tests, merges into `main` under a sync hold, then removes the worktree and branch. On a conflict it aborts and leaves `main` and the branch unchanged: report and stop.
 - With Superpowers installed, `agent_worktree.py` replaces `superpowers:using-git-worktrees`, and its `merge` replaces `superpowers:finishing-a-development-branch`. Never create a worktree or merge a branch another way.
 
