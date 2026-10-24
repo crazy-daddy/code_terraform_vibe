@@ -2488,6 +2488,8 @@ class DroneDepot(Building):
     """Drone Depot (drone_station*): bays from the spec; docked drones are the
     Drone components whose `station` is this depot."""
 
+    ref_position: list[float] | None = None  # a test sets it where it needs coords (read via getattr)
+
     def __init__(self, world, depot_id, outpost, type_id="drone_station"):
         super().__init__(world, depot_id, outpost)
         self.type_id = type_id
