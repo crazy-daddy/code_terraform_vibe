@@ -27,10 +27,6 @@ from status_warning import StatusWarning
 # trigger fired (plan_due()).
 PLAN_BACKSTOP_TICKS = 1800
 
-# run() sleep between steps: short while the machine is running or moved
-# material this step, long when there is nothing to do.
-ACTIVE_POLL_SECONDS = 1.0
-IDLE_POLL_SECONDS = 2.0
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
@@ -84,11 +80,6 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def online_message(self):
         return f"Fabricator Controller ({self.name}) online."
-
-    def next_sleep(self, result, failed):
-        active = failed or bool(result)
-        self.parker.update(not active)
-        return ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS
 
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
     CLAIM_OWNER_FIELD = "fabricator"
