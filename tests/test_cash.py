@@ -187,6 +187,37 @@ class ConsumerTests(CashTestCase):
         self.assertEqual(cash.shop_price("unknown", 7), 7)
 
 
+class ShopPricesTests(CashTestCase):
+    def test_reads_catalogue_as_int_costs(self):
+        self.world.services["shop"].prices = {"a": 12, "b": 7.0}
+        prices = cash.shop_prices()
+        self.assertEqual(prices, {"a": 12, "b": 7})
+        self.assertIsInstance(prices["b"], int)
+
+    def test_not_cached(self):
+        self.world.services["shop"].prices = {"a": 12}
+        cash.shop_prices()
+        self.world.services["shop"].prices = {"a": 15}
+        self.assertEqual(cash.shop_prices(), {"a": 15})
+
+    def test_empty_when_shop_missing(self):
+        del self.world.services["shop"]
+        self.assertEqual(cash.shop_prices(), {})
+
+    def test_empty_when_shop_raises(self):
+        def boom():
+            raise RuntimeError("shop down")
+
+        self.world.services["shop"].get_catalogue = boom
+        self.assertEqual(cash.shop_prices(), {})
+
+    def test_shop_price_fallback_for_unknown_id(self):
+        self.world.services["shop"].prices = {"a": 12}
+        self.assertEqual(cash.shop_price("a"), 12)
+        self.assertEqual(cash.shop_price("zzz", 7), 7)
+        self.assertEqual(cash.shop_price("zzz"), 0)
+
+
 class ReserveTests(CashTestCase):
     def setUp(self):
         super().setUp()

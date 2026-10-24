@@ -99,16 +99,20 @@ def balance():
 _prices = {}
 
 
-def shop_price(item_id, fallback=0):
-    """Shop catalogue price of item_id, cached per script run (prices are static)."""
-    if item_id in _prices:
-        return _prices[item_id]
+def shop_prices():
+    """{id: int(cost)} of the live Shop catalogue, read fresh (a kit's price rises per kit owned); {} if unreadable."""
     shop = component("shop")
     try:
-        for entry in shop.get_catalogue() if shop else []:
-            _prices[entry.id] = int(entry.cost)
+        return {entry.id: int(entry.cost) for entry in shop.get_catalogue()} if shop else {}
     except Exception as error:
-        swallowed("cash.shop_price: shop.get_catalogue", error)
+        swallowed("cash.shop_prices: shop.get_catalogue", error)
+        return {}
+
+
+def shop_price(item_id, fallback=0):
+    """Shop catalogue price of item_id, cached per script run (static items such as reagents; use shop_prices() for kits)."""
+    if item_id not in _prices:
+        _prices.update(shop_prices())
     return _prices.get(item_id, fallback)
 
 
