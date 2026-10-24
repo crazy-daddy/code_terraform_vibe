@@ -26,7 +26,6 @@ def need(component):
 
 clock = need(get_component("clock"))
 home = need(get_component("outpost_home"))
-research = get_component("research")
 shop = need(get_component("shop"))
 nocturna = get_component("nocturna")
 inventory = get_component("inventory")
@@ -93,16 +92,14 @@ def get_master_solar_id():
 
 
 def is_tech_unlocked(tech_id):
+    research = get_component("research")
     if not research:
         return False
-    variants = [tech_id, tech_id.replace("research_", "") + "_unlock", "research_" + tech_id.replace("_unlock", ""), tech_id.replace("research_", "")]
-    for v in variants:
-        try:
-            if research.is_unlocked(v):
-                return True
-        except Exception as error:
-            _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
-    return False
+    try:
+        return bool(research.is_unlocked(tech_id))
+    except Exception as error:
+        _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
+        return False
 
 
 def get_building_ids(type_id):
