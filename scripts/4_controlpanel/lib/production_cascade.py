@@ -628,6 +628,16 @@ def _consume_at(consumers, item_id, site_id, levels):
     site[site_id] = ladder_max(site.get(site_id, []), levels)
 
 
+def _trace_target(targets, item_id, source, detail=""):
+    log.trace(f"get_fabricator_targets: {source} raises target for {item_id} -> {targets[item_id]}{detail}")
+
+
+def _raise_target(targets, item_id, levels, source):
+    """max()-folds `levels` into targets[item_id] and traces which `source` raised it."""
+    targets[item_id] = ladder_max(targets.get(item_id, []), levels)
+    _trace_target(targets, item_id, source)
+
+
 def _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache: "SourceCache"):
     """
     Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
@@ -649,7 +659,7 @@ def _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache: "
     for item_id, quantity in get_manual_orders().items():
         ladder_raise(targets.setdefault(item_id, []), MANUAL, manual_cache.network_stock(item_id) + manual_cache.staged_units(item_id) + quantity)
         ladder_raise(home_wants.setdefault(item_id, []), MANUAL, quantity)
-        log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
+        _trace_target(targets, item_id, "manual order")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
@@ -666,8 +676,7 @@ def _fold_order_book(targets, home_wants):
     Returns {site_id: {item_id: ladder}} of the sited requesters.
     """
     for item_id, levels in order_ladders().items():
-        targets[item_id] = ladder_max(targets.get(item_id, []), levels)
-        log.trace(f"get_fabricator_targets: order book raises target for {item_id} -> {targets[item_id]}")
+        _raise_target(targets, item_id, levels, "order book")
     sited = order_consumer_sites()
     for item_id, levels in order_ladders(skip=tuple(SITE_ORDER_REQUESTERS) + tuple(sited)).items():
         home_wants[item_id] = ladder_max(home_wants.get(item_id, []), levels)
@@ -705,7 +714,7 @@ def _fold_dock_orders(targets, fabricator_outputs, home_id, cache: "SourceCache 
                 continue
             kept = reserve.get(item_id, 0) if remaining > 0 else 0
             ladder_raise(targets.setdefault(item_id, []), prio, remaining + kept)
-            log.trace(f"get_fabricator_targets: dock order {order_id} (prio {prio}) raises target for {item_id} -> {targets[item_id]} (remaining={remaining}, reserve={kept})")
+            _trace_target(targets, item_id, f"dock order {order_id} (prio {prio})", f" (remaining={remaining}, reserve={kept})")
     return consumers
 
 
@@ -726,8 +735,7 @@ def _fold_blueprint_demand(targets, fabricator_outputs, cache: "SourceCache | No
     """
     for item_id, levels in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
-            targets[item_id] = ladder_max(targets.get(item_id, []), levels)
-            log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]}")
+            _raise_target(targets, item_id, levels, "blueprint cascade")
 
 
 def _fold_consumers(consumers, home_wants, site_wants, home_id, cache: "SourceCache | None"):

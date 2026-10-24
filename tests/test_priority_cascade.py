@@ -225,5 +225,16 @@ class SiteSupplyBandTests(StubTestCase):
         self.assertEqual(priority.band(top_prio(self.builder_ladder())), priority.MANUAL)
 
 
+class RaiseTargetTests(StubTestCase):
+    def test_max_folds_levels_and_traces_the_source(self):
+        targets = {"gear": [(priority.MANUAL, 5)]}
+        with mock.patch.object(production_cascade.log, "trace") as trace:
+            production_cascade._raise_target(targets, "gear", [(priority.MANUAL, 3), (priority.BUILD, 9)], "order book")
+        self.assertEqual(
+            targets["gear"], priority.ladder_max([(priority.MANUAL, 5)], [(priority.MANUAL, 3), (priority.BUILD, 9)])
+        )
+        trace.assert_called_once_with(f"get_fabricator_targets: order book raises target for gear -> {targets['gear']}")
+
+
 if __name__ == "__main__":
     unittest.main()
