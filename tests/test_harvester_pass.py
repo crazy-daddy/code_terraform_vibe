@@ -57,6 +57,8 @@ def _keeper(**due):
     k.name = "harvester_1"
     k.log = _Log()  # type: ignore[assignment]
     k.init_hub()
+    k._deploy_fail_ticks = {}
+    k._plant_fail_ticks = {}
     if due.get("full"):
         k.set_layout_state("full", {"B2": "grow_lamp"}, [])
     k.care_batch = {}
@@ -411,7 +413,7 @@ class CompositeTests(StubTestCase):
         cell.status = "stalled"
         k.uproot_current = lambda: False
         self.assertFalse(k.clear_crop_here())
-        self.assertEqual(k._deploy_failures(), {"B2": 1000})
+        self.assertEqual(k._deploy_fail_ticks, {"B2": 1000})
 
     def test_inventory_full_sets_the_pause(self):
         k = _keeper()
@@ -510,6 +512,8 @@ def _real_keeper(cells, position="A1"):
     k.name = "harvester_1"
     k.log = _Log()  # type: ignore[assignment]
     k.init_hub()
+    k._deploy_fail_ticks = {}
+    k._plant_fail_ticks = {}
     k.init_heat_model(None)
     k.get_position = lambda: position
     k.field_pass = FieldPass(1000)
@@ -549,7 +553,7 @@ class SelectionTests(StubTestCase):
             k.stale_targets(layout, cells), {"A3": "uproot", "C14": "harvest", "C15": "uproot", "D16": "uproot"}
         )
         self.assertEqual(k.harvest_targets(cells, layout), ["A1"])
-        k._plant_failures()["C15"] = 900  # a failed uproot cools down
+        k._plant_fail_ticks["C15"] = 900  # a failed uproot cools down
         self.assertNotIn("C15", k.stale_targets(layout, cells))
 
     def test_sweep_walks_the_stale_zone_nearest_first(self):

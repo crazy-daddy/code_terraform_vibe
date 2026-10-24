@@ -31,6 +31,8 @@ class HarvesterController(MachineController):
         self.name = getattr(harvester, "id", "harvester_1")
         self.base_sector = self.detect_base_sector()
         self.log = TreeConsole(module=self.LOG_MODULE)
+        self._deploy_fail_ticks = {}  # {sector: tick of last failed machine deploy}, in memory only
+        self._plant_fail_ticks = {}  # {sector: tick of last failed plant attempt}, in memory only
 
     def detect_base_sector(self):
         """Determines the Harvester's depot pad / base sector (starts at depot)."""
