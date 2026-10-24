@@ -39,15 +39,15 @@ JOBS_KEY = "build.jobs"
 # {machine_id: {"job": job_id, "state": "requested" | "ready", "tick": tick}}: retire handshake.
 RETIRE_KEY = "build.retire"
 
+# The wrappers could not ask the game (no Ship Computer, the call raised): the caller waits and
+# retries next pass; it never blocks a job or counts the answer toward a refusal limit.
+CALL_FAILED_STATUSES = ("error", "no_computer")
 # One status table for deploy(), upgrade() and undeploy() answers; any other refusal is fatal
 # (for deploy(): deploy_limit, locked, not_deployable, location_not_found,
 # wrong_biome_for_machine, duplicate_outpost_machine, missing_drone_station).
 # Transient: "not right now", retried next step. "no_computer" and "error" are our wrappers'
 # answers (no Ship Computer, the call raised).
-TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready", "no_computer", "error")
-# The wrappers could not ask the game (no Ship Computer, the call raised): the caller waits and
-# retries next pass; it never blocks a job or counts the answer toward a refusal limit.
-CALL_FAILED_STATUSES = ("error", "no_computer")
+TRANSIENT_STATUSES = ("inventory_full", "cargo_present", "docked_drone", "construction_dependency", "drone_station_full", "under_construction", "not_enough_power", "tier_not_ready", *CALL_FAILED_STATUSES)
 # The kit or pack is not in Inventory: back to kit sourcing.
 KIT_STATUSES = ("no_kit", "item_not_in_inventory")
 # The machine is gone already: an undeploy has nothing left to do.
