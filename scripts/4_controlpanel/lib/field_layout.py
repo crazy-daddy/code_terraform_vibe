@@ -273,6 +273,7 @@ def sector_to_rc(sector):
 
 
 def rc_to_sector(r, c):
+    """Converts (row_idx, col_num) to sector string (e.g. 'E14'), None off the grid."""
     if 0 <= r < NUM_ROWS and 1 <= c <= NUM_COLS:
         return f"{ROWS[r]}{c}"
     return None

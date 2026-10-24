@@ -18,10 +18,6 @@ class HarvesterController(MachineController):
     POLL_S = 0.5
     ERROR_POLL_S = 5.0
 
-    ROWS = "ABCDEFGH"
-    NUM_ROWS = 8
-    NUM_COLS = 24
-
     if TYPE_CHECKING:
         # Supplied by HarvesterHeatMixin (lib/harvester_heat.py); this class never runs without it.
         def cool_down(self, target_level=None) -> None: ...
@@ -35,13 +31,6 @@ class HarvesterController(MachineController):
         self.name = getattr(harvester, "id", "harvester_1")
         self.base_sector = self.detect_base_sector()
         self.log = TreeConsole(module=self.LOG_MODULE)
-
-    @classmethod
-    def rc_to_sector(cls, r, c):
-        """Converts (row_idx, col_num) to sector string (e.g. 'E14')."""
-        if 0 <= r < cls.NUM_ROWS and 1 <= c <= cls.NUM_COLS:
-            return f"{cls.ROWS[r]}{c}"
-        return None
 
     def detect_base_sector(self):
         """Determines the Harvester's depot pad / base sector (starts at depot)."""

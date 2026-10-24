@@ -4,6 +4,7 @@ import builtins
 import unittest
 
 import field_keeper
+import field_layout
 from field_keeper import (
     INVENTORY_FULL_RELIEVED_RETRY_TICKS,
     INVENTORY_FULL_RETRY_TICKS,
@@ -495,7 +496,7 @@ class _Cell:
 
 def _field(planted=None, items=()):
     """{sector: _Cell} of the whole grid: empty, plus `planted` {sector: (status, plant)} and item cells."""
-    cells = {FieldKeeperController.rc_to_sector(r, c): _Cell("empty") for r in range(8) for c in range(1, 25)}
+    cells = {field_layout.rc_to_sector(r, c): _Cell("empty") for r in range(8) for c in range(1, 25)}
     for s in items:
         cells[s] = _Cell("item")
     for s, (status, plant) in (planted or {}).items():

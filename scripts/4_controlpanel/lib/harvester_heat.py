@@ -82,14 +82,14 @@ INFINITE_COST = 1 << 30
 _NO_STATUS = "~no-status~"  # statuses.get() default: a sector missing from the statuses dict
 
 
-def _grid(host):
+def _grid():
     """
     (sectors, {sector: grid index}, neighbours) of the whole field, built
     once. sectors is row-major (A1..A24, B1, ...); neighbours[i] is the tuple
     of neighbour indices of sectors[i] in field_layout.neighbours() order.
     """
     if not _GRID:
-        sectors = [host.rc_to_sector(r, c) for r in range(host.NUM_ROWS) for c in range(1, host.NUM_COLS + 1)]
+        sectors = [field_layout.rc_to_sector(r, c) for r in range(field_layout.NUM_ROWS) for c in range(1, field_layout.NUM_COLS + 1)]
         index = {sector: i for i, sector in enumerate(sectors)}
         neighbours = [tuple([index[n] for n in field_layout.neighbours(sector)]) for sector in sectors]
         neighbours.append(())
@@ -260,7 +260,7 @@ class HarvesterHeatMixin:
         cached = getattr(self, "_heat_map_cache", None)
         if cached is not None and cached[0] == start and cached[1] is statuses:
             return cached[2]
-        sectors, index, _neighbours = _grid(self._host)
+        sectors, index, _neighbours = _grid()
         default_w = int(round((DEFAULT_MOVE_COST + HOP_TIME_WEIGHT) * COST_SCALE))
         status_weight = {}
         for status in set(statuses.values()):
@@ -287,7 +287,7 @@ class HarvesterHeatMixin:
         dist, _prev, _buckets, d, _size, _weight = state
         if d > limit:
             return
-        neighbours = _grid(self._host)[2]
+        neighbours = _grid()[2]
         mark = [False] * len(dist)
         remaining = 0
         for g in goals:
@@ -303,7 +303,7 @@ class HarvesterHeatMixin:
         if start == target:
             return [], 0.0
         state = self.heat_search(start, statuses)
-        sectors, index, _ = _grid(self._host)
+        sectors, index, _ = _grid()
         goal = index.get(target, len(sectors))
         self.expand_until(state, [goal])
         dist, prev = state[0], state[1]
@@ -333,7 +333,7 @@ class HarvesterHeatMixin:
         """
         here = self._host.get_position()
         state = self.heat_search(here, statuses)
-        grid_sectors, index, _n = _grid(self._host)
+        grid_sectors, index, _n = _grid()
         off_grid = len(grid_sectors)
         goals = [index.get(s, off_grid) for s in sectors]
         self.expand_until(state, goals, first_only=True)
@@ -353,7 +353,7 @@ class HarvesterHeatMixin:
         if statuses is None:
             statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
         state = self.heat_search(self._host.get_position(), statuses)
-        grid_sectors, index, _n = _grid(self._host)
+        grid_sectors, index, _n = _grid()
         off_grid = len(grid_sectors)
         goals = [index.get(s, off_grid) for s in sectors]
         cap = int(limit * COST_SCALE)
