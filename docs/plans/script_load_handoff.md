@@ -28,12 +28,13 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 
 - `OutpostPlanner._replan` costs 276 ticks on save 0839 outside `_rank` (likely `snapshot`, `needs` or
   `plan_hosts`); the coarse filter ~155 ticks, and `FILTER_CHUNK` cannot grow (dense-pipe worst case 3355 ops).
-- `drone_haul_plan.outpost_sources` stays ~95 ticks after Vector 1; debug lines are ~19 of those, the rest is
-  uninvestigated (likely `view.free` / `most_free`). Debug logging as a whole costs the drone plan ~93 ticks
-  per call.
+- ~~`drone_haul_plan.outpost_sources` stays ~95 ticks after Vector 1.~~ Closed by measurement (2026-10-24,
+  plan "Results"): ~95 is the live path before the first snapshot publish (7 of 49 picks); on the snapshot it
+  costs ~21 of an 84-tick plan. Debug logging as a whole costs the drone plan ~93 ticks per call.
 - The snapshot publisher step costs ~105 ticks on 0839 and cancels the role-publish saving inside the
-  orchestrator. The record is ~16 KB, 88 % `free`; trim to `FAIR_BANDS` plus the top band only if the
-  `archive.get` cost shows.
+  orchestrator. The record is ~16 KB, 88 % `free`; the trim to `FAIR_BANDS` plus the top band is dropped for
+  the readers: `read_snapshot` sits in ~12 untimed ticks of `plan_haul_job` (2026-10-24). It may still pay on
+  the publisher side (write cost), unmeasured.
 - Real-save peak steps per callback are unmeasured (plan, "Tool gaps"); `step_profile.py haul` peaks at ~2,224
   steps (22 % of the cap) on synthetic input.
 
@@ -48,8 +49,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 2. **Vector 1 plan bookkeeping** (same session or a short one): tick the boxes, move the file to `done/`.
 3. **`_replan` outside `_rank`** (one session): profile with the Vector 6 command, find which of `snapshot`,
    `needs`, `plan_hosts` carries the 276 ticks, then the usual hoist or slice. Rankings are pinned by a test.
-4. **`outpost_sources`** (one session): profile `view.free` / `most_free`; pairs with trimming the record's
-   `free` section if `archive.get` shows.
+4. ~~**`outpost_sources`**~~: closed by measurement 2026-10-24, no code (plan "Results" row).
 5. **More atomic work** only after 1-4, and only with a measured target: the plan's "Do not pursue" list shows
    how often an unmeasured item turned out to cost nothing.
 
