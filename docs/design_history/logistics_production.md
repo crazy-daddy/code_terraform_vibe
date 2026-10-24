@@ -278,7 +278,7 @@ Each surveyed mineral site used to get a `resource.` map marker whose note named
 
 ## §2j — Tier-Deficit Snapshot (2026-10-22)
 
-Every drone pick, Pioneer pull and role-demand publish recomputed every outpost's tier deficits and free stock a few ticks apart (save 0839: 209 of 342 wrapped ticks per drone plan). `lib/logistics_snapshot.py` now builds them once per round into `logistics.tier_snapshot`. Plan and measurements: [vector1_tier_snapshot_2026-10.md](../plans/vector1_tier_snapshot_2026-10.md).
+Every drone pick, Pioneer pull and role-demand publish recomputed every outpost's tier deficits and free stock a few ticks apart (save 0839: 209 of 342 wrapped ticks per drone plan). `lib/logistics_snapshot.py` now builds them once per round into `logistics.tier_snapshot`. Plan and measurements: [vector1_tier_snapshot_2026-10.md](../plans/done/vector1_tier_snapshot_2026-10.md).
 
 - **Producer in the orchestrator loop, not a new automation.** `SnapshotPublisher` runs from `between_steps()` with its own 600-tick interval, a few outposts per call. A demand-refresh task kind would have inherited that record's 1,000 to 1,700-tick rounds; a separate automation costs every script allowance.
 - **Computed tiers, corrected on read by pickups.** Raw stock in the record would leave the per-item tier math, the larger cost, in every consumer. A reader subtracts only pickups that grew since the build: towards a destination from its top band down, from a source in every band. A pickup that left the in-flight set is ignored, so a delivery does not reopen a covered deficit. The correction cannot see units claimed after the build and delivered before the next one, nor stock arriving from production; the claim-time trim below catches both.

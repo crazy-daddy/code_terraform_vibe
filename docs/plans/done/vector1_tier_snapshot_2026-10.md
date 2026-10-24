@@ -8,7 +8,9 @@
 
 **Tech Stack:** game-interpreter Python (`scripts/4_controlpanel/lib`), host `unittest` with `tests/harness.py` stubs, `devtools/perf/tick_profile.py` on save 0839.
 
-**Spec:** [performance_planning_2026-10.md](performance_planning_2026-10.md), "Findings" 1 and 4, "Optimization vectors" 1, "Rollout" Vector 1 bullets. This file carries the design decisions (section "Design") and the plan.
+**Status:** done (2026-10-22, `9a83a07` to `2054879`, results `790272f`).
+
+**Spec:** [performance_planning_2026-10.md](../performance_planning_2026-10.md), "Findings" 1 and 4, "Optimization vectors" 1, "Rollout" Vector 1 bullets. This file carries the design decisions (section "Design") and the plan.
 
 ## Global Constraints
 
@@ -135,7 +137,7 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
   - `class TierView(record, reads, exclude_vehicle=None)`: `deficits(outpost_id) -> {int band: {item_id: units}}`, `free(outpost_id, item_ids, tiers=TIERS) -> {band: {item_id: units}}` (every `TIERS` key present, like `outpost_tier_free()`), `rivals(item_ids) -> {item_id: [(outpost_id, {band: units})]}` (shape of `fair_rivals_index()`, `FAIR_BANDS` only).
   - `view(reads, now=None, allow_stale=False, exclude_vehicle=None) -> TierView | None`: None unless FRESH (or STALE with `allow_stale`).
 
-- [ ] **Step 1: Write the failing tests** (harness `StubTestCase` world as in `tests/test_plan_reads.py`)
+- [x] **Step 1: Write the failing tests** (harness `StubTestCase` world as in `tests/test_plan_reads.py`)
   - `test_entry_matches_live_reads`: for every outpost, `build_entry(o, reads, items)` parsed back equals `outpost_tier_deficits(o, t, live=True, reads=reads)` and `outpost_tier_free(o, items, None, t, loader=LOADER_DRONE, reads=reads)`.
   - `test_read_states`: age 3000 FRESH, 3001 STALE, 6000 STALE, 6001 MISSING; `"v": 2` MISSING; nothing stored MISSING.
   - `test_new_pickup_cuts_top_band_first`: record deficit `{BLOCKER: {"x": 5}, NEED: {"x": 10}}`, `"flying": {}`; a live pickup of 8 x to that outpost; `view.deficits()` is `{NEED: {"x": 7}}`.
@@ -144,14 +146,14 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
   - `test_unknown_outpost_reads_empty`: `deficits("nope") == {}`, `free("nope", ["x"])` has every `TIERS` key, all empty.
   - `test_view_none_unless_fresh`: STALE gives None, with `allow_stale=True` a view; MISSING None either way.
 
-- [ ] **Step 2: Run them, expect ImportError**
+- [x] **Step 2: Run them, expect ImportError**
   Run: `python -m unittest tests.test_logistics_snapshot -v` (from repo root with the `tests` path setup the suite uses: `python -m unittest discover -s tests -p test_logistics_snapshot.py -v`). Expected: errors, module missing.
 
-- [ ] **Step 3: Implement** the Interfaces above. `build_entry` calls the existing `outpost_tier_deficits(..., live=True, reads=reads)` and `outpost_tier_free(..., loader=LOADER_DRONE, reads=reads)` (no `exclude_vehicle`), plus `reads.in_flight()` and `reads.reserved_from()`. `TierView` parses an outpost's entry once and caches it; the live side is `reads.in_flight(outpost_id)` and `reads.reserved_from(outpost_id, exclude_vehicle)`. Correction per item: `extra = max(0, live - recorded)`; destination: subtract `extra` walking `TIERS` in order, drop zeros; source: subtract `extra` from every band, drop ≤ 0.
+- [x] **Step 3: Implement** the Interfaces above. `build_entry` calls the existing `outpost_tier_deficits(..., live=True, reads=reads)` and `outpost_tier_free(..., loader=LOADER_DRONE, reads=reads)` (no `exclude_vehicle`), plus `reads.in_flight()` and `reads.reserved_from()`. `TierView` parses an outpost's entry once and caches it; the live side is `reads.in_flight(outpost_id)` and `reads.reserved_from(outpost_id, exclude_vehicle)`. Correction per item: `extra = max(0, live - recorded)`; destination: subtract `extra` walking `TIERS` in order, drop zeros; source: subtract `extra` from every band, drop ≤ 0.
 
-- [ ] **Step 4: Run the tests, expect PASS**; then ruff, pyright.
+- [x] **Step 4: Run the tests, expect PASS**; then ruff, pyright.
 
-- [ ] **Step 5: Commit** `feat(logistics): tier snapshot record and reader`.
+- [x] **Step 5: Commit** `feat(logistics): tier snapshot record and reader`.
 
 ### Task 2: Publisher and orchestrator hook
 
@@ -165,19 +167,19 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
 - Consumes: `build_entry`, `publish_snapshot` (Task 1).
 - Produces: `class SnapshotPublisher` with `step(now) -> bool` (True when it published this call), `PUBLISHER = SnapshotPublisher()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `test_not_due_before_interval`: after a publish at t, `step(t + 599)` builds nothing and returns False; `step(t + 600)` starts a round.
   - `test_step_stops_after_slice`: with a clock stub that advances 60 ticks per outpost task and 7 outposts, the first `step()` runs 2 tasks and returns False; later calls finish and the last returns True; the record's `"tick"` is the round's start tick.
   - `test_round_publishes_every_outpost`: the published `"outposts"` has an entry for each outpost with a deficit or free stock.
-  - `test_task_error_skips_outpost`: an outpost whose `build_entry` raises is left out, the round still publishes (logged through `swallowed()`).
+  - `test_task_error_skips_outpost`: an outpost whose `build_entry` raises is left out, the round still publishes (logged through `swallowed()`). Landed differently: `d35a168` discards the whole round instead (`test_task_error_discards_round`).
 
-- [ ] **Step 2: Run, expect FAIL.**
+- [x] **Step 2: Run, expect FAIL.**
 
-- [ ] **Step 3: Implement.** A round: at start `reads = PlanReads(now)`, `item_ids` = every item in `reads.requests` over all outposts, outposts from `outpost_network.outposts()`; one task per outpost; loop `while pending` with at least one task, break when `now_tick() - call_start >= LOGISTICS_SLICE_TICKS`; publish stamped with the round start. `publish_logistics_if_due()` in the orchestrator wraps `logistics_snapshot.PUBLISHER.step(now_tick())` in `try/except` with `report_error("Logistics snapshot", e)`, called in `between_steps()` before `publish_demand_if_due()`.
+- [x] **Step 3: Implement.** A round: at start `reads = PlanReads(now)`, `item_ids` = every item in `reads.requests` over all outposts, outposts from `outpost_network.outposts()`; one task per outpost; loop `while pending` with at least one task, break when `now_tick() - call_start >= LOGISTICS_SLICE_TICKS`; publish stamped with the round start. `publish_logistics_if_due()` in the orchestrator wraps `logistics_snapshot.PUBLISHER.step(now_tick())` in `try/except` with `report_error("Logistics snapshot", e)`, called in `between_steps()` before `publish_demand_if_due()`.
 
-- [ ] **Step 4: Run tests, expect PASS**; ruff, pyright. Add the key row to archive_ipc.md §4 and the constants and FRESH/STALE/MISSING table to vehicles_drones.md drone **Plan**.
+- [x] **Step 4: Run tests, expect PASS**; ruff, pyright. Add the key row to archive_ipc.md §4 and the constants and FRESH/STALE/MISSING table to vehicles_drones.md drone **Plan**.
 
-- [ ] **Step 5: Commit** `feat(orchestrator): publish logistics tier snapshot`.
+- [x] **Step 5: Commit** `feat(orchestrator): publish logistics tier snapshot`.
 
 ### Task 3: Drone haul planner and claim
 
@@ -194,20 +196,20 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
   - `plan_haul_job()` builds `view = logistics_snapshot.view(reads, curr_tick, exclude_vehicle=drone.name)` once and passes it; the returned plan and each alternate carry `"snapshot": True` when the view was used.
   - `trim_to_live(dest_outpost, legs, curr_tick) -> list[tuple[source_id, item_id, units]]`: legs with each item's units capped, in leg order, at the sum over bands of `outpost_tier_deficits(dest_outpost, curr_tick, live=True)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `test_fresh_snapshot_matches_live_plan` (test_plan_reads): a world with a FRESH record built from the same state gives the same `haul_destinations()` tiers and `outpost_sources()` tiers as the live path, and `PlanReads.scan` is never called.
   - `test_stale_snapshot_plans_live`: with a STALE record, `plan_haul_job` reads stock (scan called) and logs the fallback line.
   - `test_rivals_from_snapshot`: `_cap_fair_tiers` with a view caps a destination at its share against the record's `FAIR_BANDS` deficits of another outpost.
   - `test_trim_to_live_caps_legs`: live deficit x=5 at dest, legs `[("a", "x", 4), ("b", "x", 4)]` give `[("a", "x", 4), ("b", "x", 1)]`; live deficit 0 gives both legs 0.
   - `test_claim_route_trims_snapshot_plan` (job_haul with harness stubs): a `"snapshot": True` plan whose dest is now full claims nothing and returns None; a plan without the flag claims as before.
 
-- [ ] **Step 2: Run, expect FAIL.**
+- [x] **Step 2: Run, expect FAIL.**
 
-- [ ] **Step 3: Implement.** Each consumer uses the view when given, else today's code. `_claim_route()` calls `trim_to_live()` on its legs only for `"snapshot"` plans, before `claim_pickups()`; zero legs are dropped before the claim. The `_warn_if_home_has_no_depot()` `live=False` read and `drone_hauler.py`'s cargo-drop `haul_destinations()` call stay as they are.
+- [x] **Step 3: Implement.** Each consumer uses the view when given, else today's code. `_claim_route()` calls `trim_to_live()` on its legs only for `"snapshot"` plans, before `claim_pickups()`; zero legs are dropped before the claim. The `_warn_if_home_has_no_depot()` `live=False` read and `drone_hauler.py`'s cargo-drop `haul_destinations()` call stay as they are.
 
-- [ ] **Step 4: Run tests, expect PASS**; ruff, pyright.
+- [x] **Step 4: Run tests, expect PASS**; ruff, pyright.
 
-- [ ] **Step 5: Commit** `perf(drone): plan hauls from the tier snapshot`.
+- [x] **Step 5: Commit** `perf(drone): plan hauls from the tier snapshot`.
 
 ### Task 4: Pull planner and Pioneer claim
 
@@ -219,14 +221,14 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
 - Consumes: `view()`, `trim_to_live()` (Tasks 1, 3).
 - Produces: `pull_destinations(curr_tick, reads=None, view=None)`; `PullJob.pick()` builds the view with `exclude_vehicle=host.name`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `test_pull_destinations_from_snapshot`: FRESH record gives the same band groups as the live path without a stock scan.
   - `test_pull_pick_trims_to_live`: a destination filled since the build makes `pick()` release and return None (`claimed < wanted` path).
 
-- [ ] **Step 2: Run, expect FAIL.**
-- [ ] **Step 3: Implement**: `pull_deficits_tiered()` stays the live function; `pull_destinations()` uses `view.deficits(outpost.id)` when given. In `pick()`, when the view was used, run `trim_to_live()` on the route legs before `claim_pickups()`.
-- [ ] **Step 4: Run tests, expect PASS**; ruff, pyright.
-- [ ] **Step 5: Commit** `perf(pull): plan pulls from the tier snapshot`.
+- [x] **Step 2: Run, expect FAIL.**
+- [x] **Step 3: Implement**: `pull_deficits_tiered()` stays the live function; `pull_destinations()` uses `view.deficits(outpost.id)` when given. In `pick()`, when the view was used, run `trim_to_live()` on the route legs before `claim_pickups()`.
+- [x] **Step 4: Run tests, expect PASS**; ruff, pyright.
+- [x] **Step 5: Commit** `perf(pull): plan pulls from the tier snapshot`.
 
 ### Task 5: Role demand
 
@@ -238,21 +240,21 @@ Drone plan: `outpost_tier_deficits` + `outpost_tier_free` (265 of 451 wrapped) b
 - Consumes: `view(reads, now, allow_stale=True)` (Task 1).
 - Produces: `compute(curr_tick, reads=None, view=None)`, `publish(curr_tick, reads=None, view=None)`; `parts["deficits"]` keeps its shape for `mission_pool`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `test_role_compute_uses_stale_snapshot`: a STALE record's deficits appear in `compute()["parts"]["deficits"]` and no stock scan runs.
   - `test_role_compute_missing_is_live`: MISSING gives today's result.
-- [ ] **Step 2: Run, expect FAIL.**
-- [ ] **Step 3: Implement**: `compute()` takes `view.deficits(o.id)` per outpost when a view is given. The orchestrator builds `reads = PlanReads(now)` and `view(reads, now, allow_stale=True)` and passes both.
-- [ ] **Step 4: Run tests, expect PASS**; ruff, pyright.
-- [ ] **Step 5: Commit** `perf(roles): role demand from the tier snapshot`.
+- [x] **Step 2: Run, expect FAIL.**
+- [x] **Step 3: Implement**: `compute()` takes `view.deficits(o.id)` per outpost when a view is given. The orchestrator builds `reads = PlanReads(now)` and `view(reads, now, allow_stale=True)` and passes both.
+- [x] **Step 4: Run tests, expect PASS**; ruff, pyright.
+- [x] **Step 5: Commit** `perf(roles): role demand from the tier snapshot`.
 
 ### Task 6: Remeasure and document
 
 **Files:**
 - Modify: `docs/plans/performance_planning_2026-10.md` ("Results"), `docs/design_history/logistics_production.md`
 
-- [ ] **Step 1: Baselines.** Rerun on `main` (before the merge) and on the branch, save 0839, `--hours 0.4`, the three commands under "Measurements" above (drone and role gates), plus `--gate job_pull:PullJob.pick --modules pull_plan,logistics_requests --label "'pull'"` on save A (`internals/sample_saves/20261007_c5f9ebf/saves/0262_t349372.json.gz`) and `--gate role_demand:publish` on save A. Same modules and window before and after.
-- [ ] **Step 2: Check the record age.** Add `--gate logistics_snapshot:SnapshotPublisher.step --label "args[0]"` on save 0839; worst age between published `"tick"` and the next publish must stay under `LOGISTICS_FRESH_TICKS`. If not, report it; do not raise the window without the operator.
-- [ ] **Step 3: Results rows** (one per gate) in `performance_planning_2026-10.md`; design reasons (decisions 1, 3, 5, 6 and the measurements) into `docs/design_history/logistics_production.md`.
-- [ ] **Step 4: Full checks** (`python -m unittest discover -s tests`, ruff, pyright), `caveman:cavecrew-reviewer` on the branch with the session's model, fix findings.
-- [ ] **Step 5: Commit** `docs(perf): vector 1 results`.
+- [x] **Step 1: Baselines.** Rerun on `main` (before the merge) and on the branch, save 0839, `--hours 0.4`, the three commands under "Measurements" above (drone and role gates), plus `--gate job_pull:PullJob.pick --modules pull_plan,logistics_requests --label "'pull'"` on save A (`internals/sample_saves/20261007_c5f9ebf/saves/0262_t349372.json.gz`) and `--gate role_demand:publish` on save A. Same modules and window before and after.
+- [x] **Step 2: Check the record age.** Add `--gate logistics_snapshot:SnapshotPublisher.step --label "args[0]"` on save 0839; worst age between published `"tick"` and the next publish must stay under `LOGISTICS_FRESH_TICKS`. If not, report it; do not raise the window without the operator. Outcome: ages reached ~3,900, `2054879` raised `LOGISTICS_FRESH_TICKS` to 5000 (Results in `performance_planning_2026-10.md`).
+- [x] **Step 3: Results rows** (one per gate) in `performance_planning_2026-10.md`; design reasons (decisions 1, 3, 5, 6 and the measurements) into `docs/design_history/logistics_production.md`.
+- [x] **Step 4: Full checks** (`python -m unittest discover -s tests`, ruff, pyright), `caveman:cavecrew-reviewer` on the branch with the session's model, fix findings.
+- [x] **Step 5: Commit** `docs(perf): vector 1 results`.
