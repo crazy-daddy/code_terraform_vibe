@@ -35,9 +35,9 @@
 # State: one dict, fleet.decommission = {machine_id: entry} (CODE_GUIDES.md#archive)
 #   entry = {"kind": "pioneer" | "rover" | "drone", "state": "requested" | "ready" | "blocked",
 #            "attempts": int, "reason": str}
-# Kept free of heavy imports: vehicle_recall.py/drone_claims.py import it
-# inside functions, and the cards import it at load. The cleanup imports its
-# modules inside forget_machine().
+# Module-level imports are limited to small shared helpers (archive, building_ops, drone_depots, ...);
+# vehicle_recall.py/drone_claims.py import this module inside functions, and the cards import it at
+# load. The cleanup imports its modules inside forget_machine().
 
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, undeploy
@@ -136,7 +136,7 @@ class FleetDecommissionCoordinator:
         try:
             return {d["id"] for d in discover_drone_depots()}
         except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: outpost.buildings", error)
+            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: discover_drone_depots", error)
             return set()
 
     def _cargo_count(self, machine_id):

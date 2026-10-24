@@ -219,10 +219,7 @@ while True:
             # research.md's is_unlocked() example) - the catalog's internal "Tech id" field
             # ("feeder_unlock") is a different namespace read from save-state unlockedTech
             # lists (see devtools/scripts_sync.py's read_save_state), not what is_unlocked()
-            # accepts. Passing "feeder_unlock" here made is_tech_unlocked()'s variant-guessing
-            # (strip/append research_/_unlock) permanently return False, since it can never
-            # derive "research_auto_feeders" from "feeder_unlock" - the two don't share a
-            # stem - which kept every Bio-Loop building powered off even past 1.0 ppt O2.
+            # accepts.
             if "bio_" in b.id and (o2 < 1.0 or not is_tech_unlocked("research_auto_feeders")):
                 continue
             try:

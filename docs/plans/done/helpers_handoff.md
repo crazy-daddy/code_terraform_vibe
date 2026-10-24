@@ -37,5 +37,4 @@ Phase 2 merged on main (22ece059). Phase 3 landed Tasks 3.1-3.5 of [helpers_swee
   - `site_evict` `storage_outposts` swallow tag names `site_supply.storage_outposts` (carried-over wrong module).
   - `FieldKeeperController.__new__` test helpers (`test_loose_items`, `test_starter_layout`, `test_harvester_amplify`) lack the fail dicts; suite green.
   - `components.component` two-argument call keeps pyright ignores (the typed alias keeps per-name Literal returns).
-  - `pillar_swap.TRANSIENT_UNDEPLOY_STATUSES` restates the `CALL_FAILED` pair as literals.
   - `bio.py` `ord_info.name` is read outside any guard (the removed `try` covered it).
