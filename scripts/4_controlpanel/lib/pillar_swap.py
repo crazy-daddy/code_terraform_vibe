@@ -169,12 +169,7 @@ class PillarSwap:
         return sorted(found)
 
     def _prices(self):
-        shop = component("shop")
-        try:
-            return {entry.id: int(entry.cost) for entry in shop.get_catalogue()} if shop else {}
-        except Exception as error:
-            swallowed("pillar_swap._prices: shop.get_catalogue", error)
-            return {}
+        return cash.shop_prices()
 
     def _target_tier(self, type_id, tier, prices):
         """tier, lowered while its pack can be neither bought nor taken from Inventory."""

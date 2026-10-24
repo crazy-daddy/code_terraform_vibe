@@ -82,14 +82,7 @@ AUTOMATOR_PRICE_FALLBACK = 30000
 
 
 def shop_price(item_id, fallback):
-    try:
-        shop = get_component("shop")
-        for entry in shop.get_catalogue() if shop else []:
-            if entry.id == item_id:
-                return int(entry.cost)
-    except Exception as error:
-        swallowed("harvester_machines.shop_price: get_component", error)
-    return fallback
+    return cash.shop_prices().get(item_id, fallback)
 
 
 class HarvesterMachinesMixin:

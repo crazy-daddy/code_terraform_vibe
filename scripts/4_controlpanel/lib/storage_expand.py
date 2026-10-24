@@ -25,7 +25,6 @@ from game_clock import now_tick
 from site_evict import storage_outposts
 from status_warning import StatusWarning
 from storage import forget_storage_discovery, inventory_count, slot_layout
-from swallow import swallowed
 from tree_console import TreeConsole
 from warehouse_upgrade import BinUpgrader, WarehouseUpgrader
 
@@ -62,14 +61,7 @@ class StorageExpander:
         return research_unlocked(research_id, "storage_expand._unlocked") or inventory_count(type_id) > 0
 
     def _price(self, type_id, fallback):
-        shop = component("shop")
-        try:
-            for entry in shop.get_catalogue() if shop else []:
-                if entry.id == type_id:
-                    return int(entry.cost)
-        except Exception as error:
-            swallowed("storage_expand._price: shop.get_catalogue", error)
-        return fallback
+        return cash.shop_prices().get(type_id, fallback)
 
     def _kit(self):
         """(type id, name, price, swap key) of the best unlocked store kit, or None."""

@@ -106,14 +106,7 @@ class BuildingSwapUpgrader:
             return 0
 
     def _price(self):
-        shop = self._component("shop")
-        try:
-            for entry in shop.get_catalogue() if shop else []:
-                if entry.id == self.LARGE_TYPE_ID:
-                    return int(entry.cost)
-        except Exception as error:
-            swallowed(f"{self.MODULE}._price: shop.get_catalogue", error)
-        return self.LARGE_PRICE_FALLBACK
+        return cash.shop_prices().get(self.LARGE_TYPE_ID, self.LARGE_PRICE_FALLBACK)
 
     def _large_unlocked(self):
         where = f"{self.MODULE}._large_unlocked"
