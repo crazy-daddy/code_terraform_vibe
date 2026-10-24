@@ -65,9 +65,14 @@ so step 2 is needed.
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 | `notify()` called directly (2026-10-23) | 6 guarded `_notify` copies (`power`, `power_solar`, `reactor`, `oil_generator`, `script_parking`, `wildlife_planner`) | this branch |
 | `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
+| `archive.get_dict()` (2026-10-24) | 20 def-level dict readers, 3 try-guarded readers, ~15 line-level `get(K, {})` + isinstance sites, 3 `autoplay` readers | helpers-impl-1 |
+| `vehicle_survey.spiral_next_index()` (2026-10-24) | 2 spiral readers that raised on a non-dict; `SURVEY_SPIRAL_KEY` defined twice | helpers-impl-1 |
+| `unsupported_markers.merge_unsupported()` / `key_tile()` (2026-10-24) | fleet and cleaner folds of the legacy blacklists (fleet kept raw `X:Y` keys, pioneer won collisions) | helpers-impl-1 |
+| `components.research_unlocked()` / `all_research_unlocked()` (2026-10-24) | 12 research unlock guards | helpers-impl-1 |
+| `components.outposts()` (2026-10-24) | 6 `_outposts` / `_all_outposts` copies, 13 network-list prologues (`weather_signals` stays apart) | helpers-impl-1 |
 
 ## Open candidates
-Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. Ranked `drift-bug` and `merge` families, best first (details and sites in the files; the plan is the TODO box "Helpers: implementation plan for the judged sweep families"):
+Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. Ranked `drift-bug` and `merge` families, best first (details and sites in the files; implementation plan: [helpers_sweep_impl.md](helpers_sweep_impl.md)):
 1. drift-bug: survey spiral readers raise on a non-dict, `SURVEY_SPIRAL_KEY` defined twice (S).
 2. drift-bug: `vehicle_claims.get_unsupported_targets` and `archive_cleaner._merge_unsupported` disagree on legacy pioneer keys (S).
 3. merge `archive.get_dict` (~25 sites; opens the spiral fix and the survey bypassers).
