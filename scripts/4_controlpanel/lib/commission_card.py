@@ -55,14 +55,11 @@ def read_outposts():
             log.debug(f"read_outposts: skip ref without id: {ref!r}")
             continue
         found.append(entry)
-        try:
-            types = [getattr(b, "type_id", "") for b in ref.buildings()]
-            has_depot = len([t for t in types if t in DEPOT_TYPE_TIERS]) > 0
-            log.trace(f"read_outposts: {entry} depot={has_depot} buildings={types}")
-            if has_depot:
-                with_depot.append(entry)
-        except Exception as error:
-            swallowed("commission_card.read_outposts: outpost.buildings", error)
+        types = components.building_type_counts(ref, "commission_card.read_outposts: outpost.buildings")
+        has_depot = any(t in DEPOT_TYPE_TIERS for t in types)
+        log.trace(f"read_outposts: {entry} depot={has_depot} buildings={types}")
+        if has_depot:
+            with_depot.append(entry)
     order = lambda o: (not o[2], o[0])
     found.sort(key=order)
     with_depot.sort(key=order)

@@ -637,9 +637,7 @@ def read_outposts(roles_map):
     out = []
     for ref in components.outposts():
         try:
-            types = {}
-            for building in ref.buildings() or []:
-                types[building.type_id] = types.get(building.type_id, 0) + 1
+            types = components.building_type_counts(ref, "outpost_needs.read_outposts: outpost.buildings")
             out.append({"id": ref.id, "x": float(ref.x), "y": float(ref.y), "biome": ref.biome, "home": bool(ref.is_home), "roles": autoplay_roles.role_list(roles_map.get(ref.id)), "types": types, "used": int(ref.buildings_used), "capacity": int(ref.buildings_capacity)})
         except Exception as error:
             swallowed("outpost_needs.read_outposts: outpost read", error)

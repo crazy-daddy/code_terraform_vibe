@@ -169,6 +169,20 @@ def building_ids_at(outpost, type_id, where="components.building_ids_at: outpost
         return []
 
 
+def building_type_counts(outpost, where="components.building_type_counts: outpost.buildings") -> "dict[str, int]":
+    """{type_id: count} over one unfiltered outpost.buildings() walk. {} for a raised walk
+    (swallowed under `where`)."""
+    counts: dict[str, int] = {}
+    try:
+        for building in outpost.buildings() or []:
+            type_id = getattr(building, "type_id", "")
+            counts[type_id] = counts.get(type_id, 0) + 1
+    except Exception as error:
+        swallowed(where, error)
+        return {}
+    return counts
+
+
 def components_at(outpost, type_id, where="components.components_at: outpost.buildings") -> list:
     """The resolved components of the type_id buildings at outpost, unresolved ones
     dropped. [] for no outpost or a raised walk (swallowed under `where`)."""

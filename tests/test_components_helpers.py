@@ -6,6 +6,7 @@ import harness
 from components import (
     all_research_unlocked,
     building_ids_at,
+    building_type_counts,
     components_at,
     home_outpost,
     outpost_by_id,
@@ -113,6 +114,13 @@ class PerOutpostLookupTests(harness.StubTestCase):
 
     def test_building_ids_at_none_outpost_reads_empty(self):
         self.assertEqual(building_ids_at(None, "habitat"), [])
+
+    def test_building_type_counts_counts_every_building_by_type(self):
+        self.assertEqual(building_type_counts(self.out), {"habitat": 3, "waste_processor": 1})
+
+    def test_building_type_counts_raise_reads_empty(self):
+        self.assertEqual(building_type_counts(_RaisingOutpost(), "test.where"), {})
+        self.assertIn("[swallowed] test.where:", self.debug_log())
 
     def test_outpost_by_id_finds_ref(self):
         self.assertEqual(getattr(outpost_by_id("outpost_2"), "id", None), "outpost_2")
