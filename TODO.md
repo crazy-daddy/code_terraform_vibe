@@ -81,7 +81,7 @@ Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md). Duplicated helpe
 - [x] Helpers: implementation plan for the judged sweep families: [helpers_sweep_impl.md](docs/plans/helpers_sweep_impl.md) (spec: [helpers_sweep_candidates.md](docs/plans/helpers_sweep_candidates.md), ranking at the end; part 2 in [helpers_sweep_candidates_2.md](docs/plans/helpers_sweep_candidates_2.md)).
 - [ ] Helpers: land the sweep families, one session per phase ([helpers_sweep_impl.md](docs/plans/helpers_sweep_impl.md)).
   - [x] Phase 1: drift-bugs (spiral, unsupported merge), `archive.get_dict`, `components.research_unlocked`, `components.outposts()`.
-  - [ ] Phase 2: `archive.mutate` / `pop_entries` / `dict_entry`, `safe_call`, shop prices, per-outpost lookups, `dist` / `now_tick`.
+  - [x] Phase 2: `archive.mutate` / `pop_entries` / `dict_entry`, `safe_call`, shop prices, per-outpost lookups, `dist` / `now_tick`.
   - [ ] Phase 3: depot walks, part 2 small families, singles, deferred review minors.
 - [x] Size 1: bugs and rule breaks (`get_raw_material_reason` reread, duplicate `survey.unsupported_targets` and `TRANSIENT_UNDEPLOY_STATUSES`, copied `fabricator_unlocked_outputs`).
 - [x] Size 2: `@method_block` pass on the log-inflated functions, rescan.

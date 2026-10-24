@@ -1,24 +1,28 @@
-# Helpers handoff (2026-10-24, Phase 1 session)
+# Helpers handoff (2026-10-24, Phase 2 session)
 
 ## What landed
-- Branch `agent/helpers-impl-1` (worktree `.claude/worktrees/helpers-impl-1`), 12 commits, merged into `main` (c08b654): Tasks 1.1-1.7 of [helpers_sweep_impl.md](helpers_sweep_impl.md).
-  - `ArchiveClient.get_dict`, swept over the listed def-level, try-guarded, line-level and `autoplay` sites.
-  - Spiral drift-bug: `vehicle_survey.spiral_next_index()`; `SURVEY_SPIRAL_KEY` and `LEGACY_PIONEER_SPIRAL_KEY` defined once.
-  - Unsupported-target drift-bug: `unsupported_markers.merge_unsupported()` / `key_tile()` shared by fleet and cleaner; `vehicle_survey.unscanned_pois` dropped its raw `X:Y` lookup.
-  - `components.research_unlocked()` / `all_research_unlocked()` (12 sites), `components.outposts()` (6 copies, prologues in `L/` and `ap/`).
-  - Final review fix: `weather_signals.discover_stations` keeps its own network read, so `refresh_stations` keeps the last station list on a raise.
-- Docs: `archive_ipc.md`, `lib_map.md`, `Landed:` lines in both spec files, Done table in [code_quality.md](code_quality.md). Clone pairs >= 0.85: 1219 before, 1032 after.
+- Branch `agent/helpers-impl-2` (worktree `.claude/worktrees/helpers-impl-2`), 25 commits on 25a52b1, not merged yet: Tasks 2.1-2.6 of [helpers_sweep_impl.md](helpers_sweep_impl.md).
+  - `ArchiveClient.mutate` / `pop_entries` / `dict_entry`; keyed-state wrappers, lookups, patches and the updater batches moved onto them. `set_entry` / `pop_entry` are one-line `mutate` calls.
+  - `swallow.safe_call(where, read, default)`.
+  - `cash.shop_prices()`; `cash.shop_price(item_id, fallback=None)` keeps its cache, its four callers pass `fallback=0`. The autoplay price reads call `cash.shop_prices()`.
+  - `components.building_ids_at`, `outpost_by_id`, `components_at`, `sensor_value`.
+  - `geometry.dist`; the four autoplay tick copies call `game_clock.now_tick`.
+- Docs: `archive_ipc.md`, `lib_map.md`, `Landed:` lines in the spec, Done table in [code_quality.md](code_quality.md). Clone pairs >= 0.85: 1032 before, 1032 after (one ignore entry removed, one added).
 
 ## Decisions taken in the session (beyond the plan)
-- `archive_cleaner.clean_claims` keeps its raw reads: its write check compares the raw values with the cleaned map, so `get_dict` would stop it repairing a malformed claims key.
-- `weather_signals.discover_stations` stays apart (against the plan's Review Focus 5): see above.
-- Modules with a local or parameter named `outposts` call `components.outposts()` through `import components`.
+- `mutate` edits the stored dict in place, like `set_entry` / `pop_entry`; `supply_dock`'s old `dict(stored)` copy went with it.
+- The four getattr-by-name sites pass `lambda: getattr(obj, m)()`, not a bound method: a bound method would raise `AttributeError` outside the guard.
+- Named wrappers (`_read`, `_call`, `_safe`, the `safe_call` one-liners, the `_tick` / `_now_tick` one-liners) keep their names as one-line calls.
+- Autoplay sites call `L/cash.py` directly: all three autoplay files already imported `cash` (directly or through `pillar_swap`).
+- Apart: `building_ops._ids_at` (None when unreadable; `[]` would misread machines as new), `feed_maker._read_habitat_ids` (order-sensitive), `production_sites.outpost_by_site_id` (its `_all_outposts()` scan carries the home fallback), `seed_maker._mark_tried` keeps its `self._tried` assignment inside the `mutate` fn.
 
 ## What is next
-- Phase 2 of the plan in worktree `helpers-impl-2`: Tasks 2.1-2.6.
+- Operator: approve the merge (`python devtools/agent_worktree.py merge helpers-impl-2 -m "<subject>"`).
+- Phase 3 of the plan in worktree `helpers-impl-3`: Tasks 3.1-3.5.
 
 ## Open questions and leftovers
-- About 140 unlisted `archive.get(K, {})` lines remain; the spec says they switch as they are touched. A bulk batch could take them in Phase 3.
-- Two `outposts()` copies not in the spec site list: `storage_sweeps._all_outposts` (returns None on a raise), `role_demand._network_outposts`.
-- The one-line `get_dict` wrappers now show up as clone clusters (they keep their names, per the spec). No ignore entries were added.
-- Worktree pyright reported 6 errors for unresolved `typer`/`watchdog` (the worktree's pip-less venv). Main is clean after the merge.
+- Coercing updaters outside the Phase 2 lists remain (`pioneer_upgrade` set-or-pop is Phase 3 rank 15; `cash.release`, `retired_machines.retire`, `seed_maker` `_claim` / `_release`, `fleet_claims_common.set_flagged`). `archive_ipc.md` states the rule for new or edited sites.
+- Three clone-scan ignore entries fall below 0.85 in files Phase 2 did not touch: `fluid_routing` `ensure_output_logged ~ ensure_input_logged`, `drone_navigation` `fly_to_drill ~ fly_to_station`, `production_source` `fabricator_recipes ~ fuel_assembler_recipes`. Phase 3 close can drop them.
+- `cash.shop_price` does not cache a miss (pre-existing); a missing catalogue now logs one swallowed line where the old autoplay reads were silent.
+- No tests cover the one-line autoplay `read_prices` / `kit_price` delegations.
+- `wildlife_planner._population` returns `float(...)`; a None reading now warns through `swallowed`.
