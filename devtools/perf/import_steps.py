@@ -8,19 +8,25 @@ chains in a headless run of a real save, and fails when one nears the cap.
 
 A lib's module body runs synchronously when it is first imported, and the
 whole chain below one import statement shares one cap of stepsLimit*10
-(10,000) steps with the rest of that execution (dev_workflow §1d-1
-"Import-time code"). Over it, the script crashes at load, in game too.
+(10,000) steps with the rest of that slice (dev_workflow §1d-1 "Import-time
+code"). Over it, the script crashes with an uncatchable StepLimitError, in
+game too.
 
 The run goes through run.mjs --save --include-autoplay (the repo's current
 scripts and libs, the autoplay planner Automation started), which writes
 OUT/run/import_steps.json: one record per module body run, from the
-simworker's own step counter (simhost.mjs patchImportSteps()). A slot's peak
-is the largest counter value at the end of a top-level import (depth 1), so
-it includes the steps its execution spent before the import. Imports inside
-functions (lazy ones) count too, as the execution that reaches them.
+simworker's own step counter (simhost.mjs patchImportSteps()). The counter
+counts the whole slice, so a record's `after` is what the cap is checked on,
+including the steps the slice spent before the import (`before`). A slot's
+peak is the largest `after` of an outermost load (depth 1). Imports inside
+functions (lazy ones) count as the slice that reaches them, which is why
+`before` is listed: a lazy load inside a heavy run_atomic() slice starts
+high. Only loads the window reaches are measured; --hours sets it.
 
 Exit 1 when a slot's peak is over --threshold of the cap (default 0.9) or a
-module body crashed. Only reads the save; writes under --out (default: a
+module body hit the step limit. Bodies that raised something else are listed
+but do not fail the check (an importer may catch them; a crash shows in the
+run's console.log). Only reads the save; writes under --out (default: a
 temp directory). Outside the main checkout (an agent worktree) set
 CT_SIMWORKER to the main checkout's internals/terraform_decompiled/simworker/deobfuscated.js.
 """
@@ -36,31 +42,40 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 RUN_MJS = os.path.join(REPO_ROOT, "devtools", "simulation", "headless", "run.mjs")
 RECORDS = "import_steps.json"
 DEFAULT_THRESHOLD = 0.9
-DEFAULT_HOURS = "0.02"  # the planner Automation imports its groups within the first seconds
+# The planner Automation imports its groups in the first seconds; on save 0839
+# its first founding pass (outpost_needs.snapshot()) ran 0.009 h in.
+DEFAULT_HOURS = "0.02"
+STEP_LIMIT = "step_limit"
 
 
 def slot_peaks(records):
-    """{script: {"steps", "module", "cap", "crashed"}}: the largest step counter
-    at the end of a top-level (depth 1) import, the module it imported, the
-    cap, and the modules whose body raised."""
+    """{script: {"steps", "before", "module", "cap", "crashed", "raised"}}: the
+    largest step counter at the end of an outermost (depth 1) load, the slice
+    steps before it, the module, the cap; modules whose body hit the step
+    limit (crashed) or raised another error (raised)."""
     peaks = {}
     for rec in records:
-        slot = peaks.setdefault(rec["script"], {"steps": 0, "module": None, "cap": rec["cap"], "crashed": []})
-        if not rec["ok"] and rec["module"] not in slot["crashed"]:
-            slot["crashed"].append(rec["module"])
+        slot = peaks.setdefault(
+            rec["script"], {"steps": 0, "before": 0, "module": None, "cap": rec["cap"], "crashed": [], "raised": []}
+        )
+        error = rec.get("error") or (None if rec["ok"] else "error")
+        if error:
+            names = slot["crashed"] if error == STEP_LIMIT else slot["raised"]
+            if rec["module"] not in names:
+                names.append(rec["module"])
         if rec["depth"] == 1 and rec["after"] > slot["steps"]:
-            slot.update(steps=rec["after"], module=rec["module"], cap=rec["cap"])
+            slot.update(steps=rec["after"], before=rec["before"], module=rec["module"], cap=rec["cap"])
     return peaks
 
 
 def over(peaks, threshold):
-    """Slots over threshold * cap, or with a crashed module body, highest first."""
+    """Slots over threshold * cap, or with a body that hit the step limit, highest first."""
     bad = [(name, p) for name, p in peaks.items() if p["steps"] > threshold * p["cap"] or p["crashed"]]
     return sorted(bad, key=lambda item: -item[1]["steps"])
 
 
 def import_trees(records, script):
-    """The top-level imports of one script as trees {module, inclusive, exclusive, children}.
+    """The outermost loads of one script as trees {module, inclusive, exclusive, children}.
     Records come in completion order (a module after its imports), so each
     record's children are the finished records one level deeper since its last sibling."""
     pending = {}
@@ -90,13 +105,15 @@ def tree_lines(node, indent=0):
 
 
 def report(peaks, threshold, top):
-    lines = [f"{'slot':<32} {'peak':>6} {'cap %':>6}  import"]
+    lines = [f"{'slot':<32} {'peak':>6} {'cap %':>6} {'before':>6}  import"]
     ranked = sorted(peaks.items(), key=lambda item: -item[1]["steps"])
     for name, p in ranked[:top] if top else ranked:
         flag = "  OVER" if p["steps"] > threshold * p["cap"] else ""
-        crashed = f"  crashed: {', '.join(p['crashed'])}" if p["crashed"] else ""
+        crashed = f"  step limit: {', '.join(p['crashed'])}" if p["crashed"] else ""
+        raised = f"  raised: {', '.join(p['raised'])}" if p["raised"] else ""
         lines.append(
-            f"{name:<32} {p['steps']:>6} {100 * p['steps'] / p['cap']:>5.1f}%  {p['module'] or '-'}{flag}{crashed}"
+            f"{name:<32} {p['steps']:>6} {100 * p['steps'] / p['cap']:>5.1f}% {p['before']:>6}  "
+            f"{p['module'] or '-'}{flag}{crashed}{raised}"
         )
     return lines
 
@@ -109,7 +126,8 @@ def run(save, out, hours):
     path = os.path.join(run_dir, RECORDS)
     if not os.path.exists(path):
         sys.exit(
-            f"import_steps: {path} missing: the simworker build lacks the module body pattern (simhost.mjs MODULE_BODY warning in {out}/run.stdout)"
+            f"import_steps: {path} missing: the simworker build lacks the module body pattern "
+            f"(simhost.mjs MODULE_BODY warning in {out}/run.stdout)"
         )
     return path
 
@@ -133,7 +151,7 @@ def main(argv=None):
     parser.add_argument(
         "--tree", metavar="SLOT", help="also print SLOT's import trees (inclusive and own steps per module)"
     )
-    parser.add_argument("--module", help="with --tree: only the top-level import of this module")
+    parser.add_argument("--module", help="with --tree: only the outermost load of this module")
     args = parser.parse_args(argv)
 
     path = args.records

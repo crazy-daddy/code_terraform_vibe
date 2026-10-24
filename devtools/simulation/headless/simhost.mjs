@@ -15,7 +15,7 @@ import { patchInstantBuild, patchScale } from "./anchors.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 9;
+const SHIM_VERSION = 10;
 
 // The shim reaches the simulation through minified names (core class, SimHost,
 // state load/serialize, command registry, ...) that change with every game
@@ -48,6 +48,33 @@ export function findBootstrapNames(src) {
   return { names, missing };
 }
 
+// Import steps (patchImportSteps()): one record per player module body run,
+// with the evaluator's step counter before and after it. The counter counts
+// the whole slice (it resets per slice in run()), so after is what the cap is
+// checked on, a lazy import's steps before it included. depth counts the
+// body runs in progress on that evaluator (1 = outermost);
+// moduleResolutionStack is no import nesting (a lazy import inside a lib
+// function already sees entries on it). error: null, "step_limit" (the
+// worker's StepLimitError, the cap), or the thrown class name; a top-level
+// `return` (readySignal, the worker's return throw) counts as a normal end,
+// as resolveModule() treats it. Always on: one push per module load, no
+// steps of its own. Exported for test/import_steps.test.mjs.
+export const IMPORT_STEP_SHIM = String.raw`
+const __ctImportSteps = [];
+function __ctImportStep(ev, fn, readySignal) {
+  const before = ev.steps;
+  const depth = (ev.__ctImportDepth = (ev.__ctImportDepth ?? 0) + 1);
+  let error = null;
+  try { fn(); } catch (e) {
+    if (!(readySignal && e instanceof readySignal)) error = e?.name === "StepLimitError" ? "step_limit" : (e?.name || e?.constructor?.name || "error");
+    throw e;
+  } finally {
+    ev.__ctImportDepth = depth - 1;
+    __ctImportSteps.push({ script: ev.ownSourceName, module: ev.moduleResolutionStack.at(-1) ?? null,
+      depth, before, after: ev.steps, cap: ev.stepsLimit * 10, ok: error === null, error });
+  }
+}`;
+
 function shimSource(N) {
   return String.raw`
 const __ctSystemMs = new Map();
@@ -61,23 +88,7 @@ function __ctStickyFluid(id, caps, fluids) {
   if (fluids !== "[null,null,null]") __ctLastFluids.set(id, [caps, fluids]);
   return __ctLastFluids.get(id) ?? [caps, fluids];
 }
-// Import steps (patchImportSteps()): one record per player module body run,
-// with the evaluator's step counter before and after it. The counter counts
-// the whole slice, so a depth-1 record's after is what the cap is checked on.
-// depth counts the body runs in progress on that evaluator (1 = outermost);
-// moduleResolutionStack is no import nesting (a lazy import inside a lib
-// function already sees entries on it).
-const __ctImportSteps = [];
-function __ctImportStep(ev, fn) {
-  const before = ev.steps;
-  const depth = (ev.__ctImportDepth = (ev.__ctImportDepth ?? 0) + 1);
-  let ok = false;
-  try { fn(); ok = true; } finally {
-    ev.__ctImportDepth = depth - 1;
-    __ctImportSteps.push({ script: ev.ownSourceName, module: ev.moduleResolutionStack.at(-1) ?? null,
-      depth, before, after: ev.steps, cap: ev.stepsLimit * 10, ok });
-  }
-}
+${IMPORT_STEP_SHIM}
 function __ctTimedSystem(name, fn) {
   if (__ctSkipSystems.has(name)) return;
   const t0 = performance.now();
@@ -212,15 +223,20 @@ function patchFreeDebug(src) {
 // Import steps: a player module's body runs in the evaluator's resolveModule()
 // as `this.executeModuleBodySync(<record>.body);`, synchronous and under the
 // one stepsLimit*10 cap. __ctImportStep() records the step counter around it
-// (devtools/perf/import_steps.py reads the records).
+// (devtools/perf/import_steps.py reads the records). The catch right after it
+// treats one class as a finished body (`if (n instanceof <Return>) { u.status
+// = ready`): that class is passed on, so a top-level return is no error.
 const MODULE_BODY = /this\.executeModuleBodySync\(([\w$]+)\.body\);/g;
+const READY_SIGNAL = /^\s*[\w$]+\.status = `ready`;\s*\} catch \(([\w$]+)\) \{\s*if \(\1 instanceof ([\w$]+)\) \{\s*[\w$]+\.status = `ready`;/;
 
 export function patchImportSteps(src) {
   const found = [...src.matchAll(MODULE_BODY)];
   if (found.length !== 1) return { src, why: `module body run found ${found.length}x (want 1)` };
   const [line, record] = found[0];
-  const patched = `__ctImportStep(this, () => this.executeModuleBodySync(${record}.body));`;
-  return { src: src.slice(0, found[0].index) + patched + src.slice(found[0].index + line.length) };
+  const end = found[0].index + line.length;
+  const ready = READY_SIGNAL.exec(src.slice(end, end + 300))?.[2];
+  const patched = `__ctImportStep(this, () => this.executeModuleBodySync(${record}.body), ${ready ?? "null"});`;
+  return { src: src.slice(0, found[0].index) + patched + src.slice(end), readySignal: ready ?? null };
 }
 
 function patchSignature(src) {
@@ -323,6 +339,7 @@ export function patchSimworker(src) {
   } else {
     src = importSteps.src;
     features.importSteps = true;
+    if (!importSteps.readySignal) warnings.push("module return class not found after the module body run: a top-level return in a lib records as an error");
   }
   // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all five sites or none.
   const scale = step("SCALE_PATTERNS", () => patchScale(src));
