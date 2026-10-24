@@ -698,9 +698,18 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
 
 ## 🧼 Code Quality (2026-10-22)
 
-Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md).
+Plan: [docs/plans/done/code_quality.md](docs/plans/done/code_quality.md). Duplicated helpers plus the `size_scan.py` triage (9 long files, 139 complex functions).
 
 - [x] Helpers: land the sweep families, one session per phase ([helpers_sweep_impl.md](docs/plans/done/helpers_sweep_impl.md)).
   - [x] Phase 1: drift-bugs (spiral, unsupported merge), `archive.get_dict`, `components.research_unlocked`, `components.outposts()`.
   - [x] Phase 2: `archive.mutate` / `pop_entries` / `dict_entry`, `safe_call`, shop prices, per-outpost lookups, `dist` / `now_tick`.
   - [x] Phase 3: depot walks, part 2 small families, singles, deferred review minors.
+- [x] Helpers: open candidates (`_notify`, deploy/undeploy onto `building_ops`): [notify_building_ops.md](docs/plans/done/notify_building_ops.md).
+- [x] Helpers: next sweep (2026-10-23): [helpers_sweep.md](docs/plans/done/helpers_sweep.md), judged families in [helpers_sweep_candidates.md](docs/plans/done/helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](docs/plans/done/helpers_sweep_candidates_2.md).
+- [x] Helpers: close (2026-10-24): the three coercing updaters outside the sweep lists on `archive.mutate` / `set_entry` / `pop_entry`, the "Commission home sentinel" family into `fleet_commission._queue`, review minors; leftovers judged in [helpers_handoff.md](docs/plans/done/helpers_handoff.md).
+- [x] Size 1: bugs and rule breaks (`get_raw_material_reason` reread, duplicate `survey.unsupported_targets` and `TRANSIENT_UNDEPLOY_STATUSES`, copied `fabricator_unlocked_outputs`).
+- [x] Size 2: `@method_block` pass on the log-inflated functions, rescan.
+- [x] Size 3: shared helpers, one family per commit.
+- [x] Size 4: file splits (`script_parking` first, then `storage`, `site_supply`, `bio`, `wildlife_planner`).
+- [x] Size 5: long functions still over the limits.
+- [x] Size 6: fill `size_scan_ignore.txt`, record the rescan counts in the plan.

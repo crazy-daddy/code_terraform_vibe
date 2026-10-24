@@ -2,7 +2,7 @@
 # One hit id per line, as the report prints it: <file>::<qualname> (<module> for a file)  @pin  # reason
 # Pin: metrics at review, complexity/branches/statements ('-' under the limit) or file lines; set by --pin.
 # An entry that grows past its pin is reported again (rule: size_scan.py docstring).
-# Triage: docs/plans/code_quality.md, "Size scan triage (2026-10-22)".
+# Triage: docs/plans/done/code_quality.md, "Size scan triage (2026-10-22)".
 
 # Files
 lib/fluid_routing.py::<module>  @1480  # split to fluid_tanks optional; much of the length is docstrings

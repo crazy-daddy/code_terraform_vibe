@@ -72,23 +72,9 @@ Plans (done): [handler_unification.md](docs/plans/done/handler_unification.md), 
 
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
 
-## 🧼 Code Quality (2026-10-22)
-
-Plan: [docs/plans/code_quality.md](docs/plans/code_quality.md). Duplicated helpers plus the `size_scan.py` triage (9 long files, 139 complex functions). One session per step, `/clear` between.
-
-- [x] Helpers: open candidates (`_notify`, deploy/undeploy onto `building_ops`): [notify_building_ops.md](docs/plans/done/notify_building_ops.md).
-- [x] Helpers: next sweep (2026-10-23): [helpers_sweep.md](docs/plans/done/helpers_sweep.md), judged families in [helpers_sweep_candidates.md](docs/plans/done/helpers_sweep_candidates.md).
-- [x] Helpers: implementation plan for the judged sweep families: [helpers_sweep_impl.md](docs/plans/done/helpers_sweep_impl.md) (spec: [helpers_sweep_candidates.md](docs/plans/done/helpers_sweep_candidates.md), ranking at the end; part 2 in [helpers_sweep_candidates_2.md](docs/plans/done/helpers_sweep_candidates_2.md)).
-- [x] Size 1: bugs and rule breaks (`get_raw_material_reason` reread, duplicate `survey.unsupported_targets` and `TRANSIENT_UNDEPLOY_STATUSES`, copied `fabricator_unlocked_outputs`).
-- [x] Size 2: `@method_block` pass on the log-inflated functions, rescan.
-- [x] Size 3: shared helpers, one family per commit.
-- [x] Size 4: file splits (`script_parking` first, then `storage`, `site_supply`, `bio`, `wildlife_planner`).
-- [x] Size 5: long functions still over the limits.
-- [x] Size 6: fill `size_scan_ignore.txt`, record the rescan counts in the plan.
-
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
-Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50).
+Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50). Session handoff (2026-10-24): [docs/plans/script_load_handoff.md](docs/plans/script_load_handoff.md).
 
 - [ ] **Planning-phase performance** ([docs/plans/performance_planning_2026-10.md](docs/plans/performance_planning_2026-10.md), 2026-10-22 headless profile of the dynamic-role planners): drone haul plan 222 ticks per pick near the step cap, fleet commission step 124 ticks per ~180, demand record never FRESH on a 7-outpost save. Vectors ranked there: shared tier-deficit snapshot, lazy commission log text, refresh round within the fresh window, bounded route permutations. Tool gaps closed 2026-10-22 (`tick_profile.py --preset founding`, `log_block_timing.py --headless`).
 - [ ] **Import-cap margin**: a script's top-level imports run under one 10,000-step cap (`stepsLimit*10`, live game too). `infra_planner_automation`'s `outpost_plan` chain uses 9,637 (3.6 % headroom, 2026-10-22); `building_plan` 7,931. Add a check that fails as a chain nears the cap, then trim the `outpost_plan` chain (move work out of module bodies, lazy imports).

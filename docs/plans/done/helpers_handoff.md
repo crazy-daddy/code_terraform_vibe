@@ -7,7 +7,7 @@
   - `cash.shop_prices()`; `cash.shop_price(item_id, fallback=None)` keeps its cache, its four callers pass `fallback=0`. The autoplay price reads call `cash.shop_prices()`.
   - `components.building_ids_at`, `outpost_by_id`, `components_at`, `sensor_value`.
   - `geometry.dist`; the four autoplay tick copies call `game_clock.now_tick`.
-- Docs: `archive_ipc.md`, `lib_map.md`, `Landed:` lines in the spec, Done table in [code_quality.md](../code_quality.md). Clone pairs >= 0.85: 1032 before, 1032 after (one ignore entry removed, one added).
+- Docs: `archive_ipc.md`, `lib_map.md`, `Landed:` lines in the spec, Done table in [code_quality.md](code_quality.md). Clone pairs >= 0.85: 1032 before, 1032 after (one ignore entry removed, one added).
 
 ## Decisions taken in the session (beyond the plan)
 - `mutate` edits the stored dict in place, like `set_entry` / `pop_entry`; `supply_dock`'s old `dict(stored)` copy went with it.
@@ -20,21 +20,16 @@
 Phase 2 merged on main (22ece059). Phase 3 landed Tasks 3.1-3.5 of [helpers_sweep_impl.md](helpers_sweep_impl.md); the sweep is complete.
 - Landed: decommission depot walk on `discover_drone_depots`; the 13 part 2 small families (`item_tiers.best_tier`, `_pickup_totals`, `parking_client.is_shedded`, `priority.ladder_totals`, `geometry.ceil_int`, `RecipeClaimMixin.next_sleep`, `drone_upgrade.category_ladder`, `field_layout.rc_to_sector`, `wildlife_complete`, harvester fail dicts, `_raise_target`, `_prune_fleet_dict`, `components.building_type_counts`); the singles (`components.component(id, where)`, `cash.balance`, charging `all_stations`, `network_habitats`, sport-nav flags, wants on `publish_status`, `CASCADE_MAX_DEPTH`, `dock_order_prios(key)`); the solar nit; the 3.4 minors (early_buyer and decommission call-failed handling, one `CALL_FAILED_STATUSES`, ten direct `notify()` sites). Clone pairs >= 0.85: 1032 at 22ece059, 1051 now (merged pairs gone, 55 new pairs between 3-line functions and the new helpers); three ignore entries dropped.
 - Kept apart by ruling: `fleet_upgrade._depots` (fresh read after a deploy beats the 20-tick memo); `ap/outpost_needs.read_outposts` (a raised walk must skip the outpost, `{}` reads as empty); `water_sink._water_tanks` (`discover_network_buildings` is not memoized); decommission keeps its per-status split (call-failed stays stopped, refusals restart because the Pioneer reruns its sell-parts prep); notify sites go direct, no helper; `dock_order_prios` gained a `key` parameter because the two bodies read different keys.
-- Not landed: the "Commission home sentinel" family (`fleet_commission._queue`) is outside the ranking and still open.
 
-## Open questions and leftovers
-- Coercing updaters outside the Phase 2 lists remain (`pioneer_upgrade` set-or-pop is Phase 3 rank 15; `cash.release`, `retired_machines.retire`, `seed_maker` `_claim` / `_release`, `fleet_claims_common.set_flagged`). `archive_ipc.md` states the rule for new or edited sites.
-- Three clone-scan ignore entries fall below 0.85 in files Phase 2 did not touch: `fluid_routing` `ensure_output_logged ~ ensure_input_logged`, `drone_navigation` `fly_to_drill ~ fly_to_station`, `production_source` `fabricator_recipes ~ fuel_assembler_recipes`. Phase 3 close can drop them.
-- `cash.shop_price` does not cache a miss (pre-existing); a missing catalogue now logs one swallowed line where the old autoplay reads were silent.
-- No tests cover the one-line autoplay `read_prices` / `kit_price` delegations.
-- `wildlife_planner._population` returns `float(...)`; a None reading now warns through `swallowed`.
-- Phase 3 deferred minors (from the review ledger):
-  - `_depot_ids` returns `set()` on a failed discovery, which stalls retire (fails closed, logged, as before).
-  - `script_parking` reads `SHEDDED_KEY` with `or []`, outside the spec site list.
-  - `archive_cleaner._prune_fleet_dict` derives its log noun by splitting `tag`; pass the noun explicitly.
-  - `building_type_counts` and `_prune_fleet_dict` have two tests each, not one.
-  - `commission_card` and `site_evict` now trace a raised walk as `buildings={}`; log only.
-  - `site_evict` `storage_outposts` swallow tag names `site_supply.storage_outposts` (carried-over wrong module).
-  - `FieldKeeperController.__new__` test helpers (`test_loose_items`, `test_starter_layout`, `test_harvester_amplify`) lack the fail dicts; suite green.
-  - `components.component` two-argument call keeps pyright ignores (the typed alias keeps per-name Literal returns).
-  - `bio.py` `ord_info.name` is read outside any guard (the removed `try` covered it).
+## Close (2026-10-24, on main)
+The stream is closed; the plan moved to [code_quality.md](code_quality.md) with status done.
+- Landed: `cash.release`, `retired_machines.retire` on `archive.mutate`, `fleet_claims_common.set_flagged` on `set_entry` / `pop_entry` (no hand-written non-dict coerce is left outside the four prune-then-set sites `archive_ipc.md` names); the "Commission home sentinel" family (`fleet_commission._queue` maps a `HOME_OUTPOST_ID` `home_base` / `outpost` to None, the two card wrappers stay for their log lines); `_prune_fleet_dict` takes its log noun as a parameter; the `site_evict.storage_outposts` swallow tag names its module.
+- Judged and dropped, no behavior gain:
+  - `_depot_ids` returns `set()` on a failed discovery and stalls retire: fails closed, logged, as before.
+  - `SHEDDED_KEY ... or []` reads (`script_parking`, `power` x2, `biomass_mixer_gate`): a list key, `get_dict` does not apply.
+  - `bio.py` reads `ord_info.name` unguarded: `name` is a declared field of the order model (`docs/models/earth_orders_models.md`), the removed `try` guarded the game calls, not the attribute.
+  - `components.component` two-argument call keeps its pyright ignores: the typed alias keeps per-name Literal returns.
+  - `building_type_counts` and `_prune_fleet_dict` have two tests each; `commission_card` / `site_evict` trace a raised walk as `buildings={}`; the `FieldKeeperController.__new__` test helpers lack the fail dicts (suite green).
+  - `cash.shop_price` does not cache a miss (pre-existing); a missing catalogue logs one swallowed line.
+  - `wildlife_planner._population` warns through `swallowed` on a None reading.
+  - No tests for the one-line autoplay `read_prices` / `kit_price` delegations.
