@@ -31,7 +31,6 @@ lib/site_supply.py::free_elsewhere ~ lib/site_supply.py::free_elsewhere_tiers  #
 lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
 lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/steam_condenser.py::SteamCondenserController.update_water_gate  # HysteresisLatch owns the rule; messages differ
 lib/steam_condenser.py::SteamCondenserController.update_water_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
-lib/charging_stations.py::station_at ~ lib/outpost_mining.py::outpost_by_id  # first building with coords vs outpost by id
 lib/lead_cask.py::rods_for_orders ~ lib/lead_cask.py::rods_free_for_mk4  # the held source is the rule each documents
 lib/fluid_routing.py::fill_pct_of ~ lib/fluid_routing.py::safe_is_stalled  # safe call boilerplate, different reads
 lib/logistics_requests.py::PlanReads.scan ~ lib/production_source.py::SourceCache.scan  # per-pass memo vs per-object cache, different lifetimes

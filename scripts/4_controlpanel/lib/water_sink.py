@@ -1,4 +1,5 @@
 import fluid_routing
+from components import building_ids_at
 from game_rules import LIQUID_TANK_TYPE_IDS
 from swallow import swallowed
 from tree_console import method_block
@@ -55,12 +56,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
         outpost = self._outpost()
         if not outpost or not hasattr(outpost, "buildings"):
             return True
-        try:
-            ids = sorted(getattr(ref, "id", "") for ref in outpost.buildings(WASTE_PROCESSOR_TYPE_ID))
-        except Exception as error:
-            swallowed("water_sink.WaterAwareWasteSinkController._water_duty: outpost.buildings", error)
-            return True
-        ids = [i for i in ids if i]
+        ids = building_ids_at(outpost, WASTE_PROCESSOR_TYPE_ID, "water_sink.WaterAwareWasteSinkController._water_duty: outpost.buildings")
         return not ids or ids[0] == self.name
 
     def _water_tanks(self):

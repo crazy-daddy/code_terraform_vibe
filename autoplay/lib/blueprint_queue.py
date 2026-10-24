@@ -10,7 +10,7 @@
 # or paused (prune_planned()). Pioneers prune construction.priority themselves.
 
 from archive import archive
-from components import outposts
+from components import outpost_by_id
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY
 from grid_geom import bridge_tiles, run_tiles, tile_centre
 from infra_topology import NETWORKS_KEY
@@ -25,8 +25,7 @@ def _blueprints():
 
 def _construction_outpost():
     """OutpostRef where Constructor Pioneers load (production.construction_site_id()); None = home."""
-    site_id = construction_site_id()
-    return next((ref for ref in outposts() if ref.id == site_id), None)
+    return outpost_by_id(construction_site_id())
 
 
 def stock(item_id):

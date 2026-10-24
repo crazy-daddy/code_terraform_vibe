@@ -27,7 +27,7 @@
 
 import cash
 from building_ops import classify, deploy_new, undeploy
-from components import outposts, research_unlocked
+from components import building_ids_at, outpost_by_id, research_unlocked
 from drone_upgrade import fleet_upgrade_state, is_upgrade_enabled, update_fleet_upgrade, upgrade_phase_reached
 from pillar_swap import TRANSIENT_UNDEPLOY_STATUSES
 from storage import inventory_count, set_retiring_stores
@@ -88,14 +88,10 @@ class BuildingSwapUpgrader:
     # ------------------------------------------------------------ lookups
 
     def _outpost(self, outpost_id):
-        return next((o for o in outposts() if getattr(o, "id", "") == outpost_id), None)
+        return outpost_by_id(outpost_id)
 
     def _ids_of(self, outpost: "OutpostRef", type_id):
-        try:
-            return sorted(getattr(ref, "id", "") for ref in outpost.buildings(type_id) if getattr(ref, "id", ""))
-        except Exception as error:
-            swallowed(f"{self.MODULE}._ids_of: outpost.buildings", error)
-            return []
+        return building_ids_at(outpost, type_id, f"{self.MODULE}._ids_of: outpost.buildings")
 
     def _credits(self):
         commander = self._component("commander")

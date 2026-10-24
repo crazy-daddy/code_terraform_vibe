@@ -36,7 +36,7 @@
 import cash
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, deploy_new, undeploy, upgrade
-from components import component, machine_tier, outposts, set_powered, start_script
+from components import building_ids_at, component, machine_tier, outpost_by_id, outposts, set_powered, start_script
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -148,25 +148,12 @@ class PillarSwap:
     # ------------------------------------------------------------ lookups
 
     def _ids_at(self, outpost_id, type_id):
-        for outpost in outposts():
-            if getattr(outpost, "id", "") == outpost_id:
-                try:
-                    return sorted(ref.id for ref in outpost.buildings(type_id))
-                except Exception as error:
-                    swallowed("pillar_swap._ids_at: outpost.buildings", error)
-        return []
+        return building_ids_at(outpost_by_id(outpost_id), type_id, "pillar_swap._ids_at: outpost.buildings")
 
     def _machines(self, type_id):
         """[(outpost_id, machine_id)] of every deployed type_id, sorted."""
-        found = []
-        for outpost in outposts():
-            try:
-                refs = outpost.buildings(type_id)
-            except Exception as error:
-                swallowed("pillar_swap._machines: outpost.buildings", error)
-                continue
-            found += [(getattr(outpost, "id", ""), ref.id) for ref in refs]
-        return sorted(found)
+        where = "pillar_swap._machines: outpost.buildings"
+        return sorted((getattr(o, "id", ""), b) for o in outposts() for b in building_ids_at(o, type_id, where))
 
     def _prices(self):
         return cash.shop_prices()

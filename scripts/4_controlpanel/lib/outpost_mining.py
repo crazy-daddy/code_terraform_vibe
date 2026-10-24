@@ -18,6 +18,7 @@
 # never clobbered by a background loop. Before the unlock the Storage Bin
 # default is returned without seeding (storage.default_stock_target()).
 
+import components
 from components import component
 from game_clock import is_fresh, now_tick
 from game_rules import RAW_ORE_ITEM_IDS
@@ -73,16 +74,7 @@ def _outpost_network():
 
 def outpost_by_id(outpost_id):
     """Resolves an outpost id string to its live OutpostRef/Outpost object, or None."""
-    network = _outpost_network()
-    if not network or not hasattr(network, "outposts"):
-        return None
-    try:
-        for outpost in network.outposts():
-            if getattr(outpost, "id", None) == outpost_id:
-                return outpost
-    except Exception as error:
-        swallowed("outpost_mining.outpost_by_id: network.outposts", error)
-    return None
+    return components.outpost_by_id(outpost_id)
 
 
 def nearest_outpost_id(x, y):
