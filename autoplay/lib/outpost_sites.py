@@ -83,6 +83,7 @@ from autoplay_roles import STORAGE_BUFFER_TILES, fluids_for, keeps_buffer, role_
 from contact_inference import BIOME_KINDS, kind_weights
 from extractor_plan import DRILL_KINDS
 from game_rules import RAW_ORE_ITEM_IDS
+from geometry import dist
 from grid_geom import FOOTPRINT_TILES, OUTPOST_PLACE_M, TILE_M, buffer_box, extractor_box, outpost_box, outpost_centre
 from item_tiers import can_cut
 from supply_tiers import NEAR_TILES
@@ -162,10 +163,6 @@ SITE_KINDS = ("mineral", "thermal", "water", "oil", "exotic", "biomass", "inert"
 
 
 # --- geometry ---
-
-
-def _dist(ax, ay, bx, by):
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
 
 
 def _rect_dist(px, py, cx, cy, half):
@@ -451,7 +448,7 @@ def remote_clusters(rows, starts):
             continue
         x = row["x"]
         y = row["y"]
-        if any(_dist(x, y, sx, sy) <= CONSTRUCTOR_REACH_M for sx, sy in starts):
+        if any(dist(x, y, sx, sy) <= CONSTRUCTOR_REACH_M for sx, sy in starts):
             continue
         acc = cells.setdefault(_cell(x, y), [0.0, 0.0, 0])
         acc[0] += x
@@ -516,7 +513,7 @@ def check(ctx, x, y, want_biome=None, clear=False):
     if clear and pipe_near(ctx.get("pipes", {}), x, y):
         return "pipe_buffer"
     reach = ctx.get("reach")
-    if reach and not any(_dist(cx, cy, px, py) <= reach["m"] for px, py in reach.get("points") or []):
+    if reach and not any(dist(cx, cy, px, py) <= reach["m"] for px, py in reach.get("points") or []):
         return "out_of_reach"  # no reach point at all (no home read) fails closed
     return None
 
@@ -659,7 +656,7 @@ def future_spots(ctx, fluids):
     for fluid in fluids:
         if fluid == "steam" and not spots[fluid]:
             spots[fluid] = [(x, y, FUTURE_CELL_VALUE) for x, y in ctx.get("geothermal") or []]
-        ranked = sorted(spots[fluid], key=lambda spot: (-spot[2], _dist(spot[0], spot[1], home[0], home[1]), spot[0], spot[1]))
+        ranked = sorted(spots[fluid], key=lambda spot: (-spot[2], dist(spot[0], spot[1], home[0], home[1]), spot[0], spot[1]))
         spots[fluid] = ranked[:FUTURE_TOP]
     return spots
 
@@ -811,7 +808,7 @@ def _future(want, cx, cy):
     for fluid in fluids:
         best = 0.0
         for x, y, value in spots.get(fluid, ()):
-            close = 1.0 - ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5 / FUTURE_RANGE_M  # _dist() inlined (per anchor)
+            close = 1.0 - ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5 / FUTURE_RANGE_M  # dist() inlined (per anchor)
             if close > 0 and value * close > best:
                 best = value * close
         total += best
@@ -837,7 +834,7 @@ def _finish(ctx, acc, want):
         known += weights[name] * sure
         guess += weights[name] * maybe
     home = ctx["home"]
-    home_m = _dist(cx, cy, home[0], home[1]) if home else None
+    home_m = dist(cx, cy, home[0], home[1]) if home else None
     terms["home"] = weights["home"] * (home_m / 1000.0 if home_m is not None else 0.0)
     terms["near"] = weights["near"] * (1.0 - home_m / HOME_NEAR_M if home_m is not None and home_m < HOME_NEAR_M else 0.0)
     gap, link = _nearest_both(ctx["centres"], cx, cy)
@@ -848,7 +845,7 @@ def _finish(ctx, acc, want):
     found = biome(ctx, acc["x"], acc["y"])
     terms["biome_new"] = weights["biome_new"] * (1.0 if found is not None and found not in (ctx.get("settled") or []) else 0.0)
     remote_n = ctx.get("remote_n") or 0
-    gained = sum([n for rx, ry, n in ctx["remote"] if ((cx - rx) ** 2 + (cy - ry) ** 2) ** 0.5 <= CONSTRUCTOR_REACH_M]) if remote_n else 0  # _dist() inlined
+    gained = sum([n for rx, ry, n in ctx["remote"] if ((cx - rx) ** 2 + (cy - ry) ** 2) ** 0.5 <= CONSTRUCTOR_REACH_M]) if remote_n else 0  # dist() inlined
     terms["reach_gain"] = weights["reach_gain"] * (gained / remote_n if remote_n else 0.0)
     terms["future"] = weights["future"] * _future(want, cx, cy)
     resource = known + guess

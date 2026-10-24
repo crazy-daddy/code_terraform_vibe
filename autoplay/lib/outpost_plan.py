@@ -58,6 +58,7 @@ from atomic import run_batched
 from components import component
 from game_clock import is_fresh
 from game_rules import SMELT_PRODUCTS
+from geometry import dist
 from grid_geom import OUTPOST_PLACE_M, outpost_centre, tile_xy
 from infra_topology import Topology
 from outpost_needs import URGENCIES, log_plan, needs, plan_hosts
@@ -91,10 +92,6 @@ GEO_WHY = "explore the geothermal biome: thermal vent for the steam power outpos
 
 def _rank(urgency):
     return URGENCIES.index(urgency) if urgency in URGENCIES else len(URGENCIES)
-
-
-def _dist(ax, ay, bx, by):
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
 
 
 def safe_id(text):
@@ -175,7 +172,7 @@ def pick_site(rows, proposal_id, proposals, tick):
     """First ranked row not within REJECT_RADIUS_M of a held rejected site of the same proposal; None without one."""
     holds = [entry for entry in held(proposals, tick) if entry.get("id") == proposal_id]
     for row in rows:
-        if not any(_dist(row["x"], row["y"], entry["x"], entry["y"]) < REJECT_RADIUS_M for entry in holds):
+        if not any(dist(row["x"], row["y"], entry["x"], entry["y"]) < REJECT_RADIUS_M for entry in holds):
             return row
     return None
 
@@ -200,12 +197,12 @@ def geothermal_areas(cells, home, count=GEOTHERMAL_SCOUTS, radius=GEOTHERMAL_SCO
     each farther than 2 × radius from every earlier pick (spiral outward).
     """
     hx, hy = home
-    ordered = sorted(cells, key=lambda cell: _dist(cell[0], cell[1], hx, hy))
+    ordered = sorted(cells, key=lambda cell: dist(cell[0], cell[1], hx, hy))
     picks = []
     for x, y in ordered:
         if len(picks) >= count:
             break
-        if all(_dist(x, y, px, py) > 2 * radius for px, py in picks):
+        if all(dist(x, y, px, py) > 2 * radius for px, py in picks):
             picks.append((x, y))
     return picks
 
@@ -383,8 +380,8 @@ def reconcile(proposals, listing, tick):
             events.append(("ok", pid))
         entry["ok"] = ok
         ax, ay = anchor_of_marker(mark["x"], mark["y"])
-        at_anchor = _dist(mark["x"], mark["y"], entry["x"], entry["y"]) <= MOVE_EPS_M  # a marker drawn at the anchor itself (before markers moved to the centre) is unmoved too
-        if entry["kind"] == "found" and not at_anchor and _dist(ax, ay, entry["x"], entry["y"]) > MOVE_EPS_M:
+        at_anchor = dist(mark["x"], mark["y"], entry["x"], entry["y"]) <= MOVE_EPS_M  # a marker drawn at the anchor itself (before markers moved to the centre) is unmoved too
+        if entry["kind"] == "found" and not at_anchor and dist(ax, ay, entry["x"], entry["y"]) > MOVE_EPS_M:
             entry["x"] = ax
             entry["y"] = ay
             entry["moved"] = True
@@ -483,7 +480,7 @@ def same_view(mark, view):
     """True when the marker read back already shows `view`."""
     if mark is None:
         return False
-    if _dist(mark["x"], mark["y"], view["x"], view["y"]) > 0.01:
+    if dist(mark["x"], mark["y"], view["x"], view["y"]) > 0.01:
         return False
     return all(mark.get(name) == view[name] for name in ("label", "icon", "color", "note"))
 
