@@ -151,10 +151,7 @@ class ChargingStationController(StationController):
         self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
         self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({unit_ref.x:.1f}, {unit_ref.y:.1f}).")
 
-        try:
-            notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
-        except Exception as error:
-            swallowed("charging.ChargingStationController._dispatch_rescue: notify", error)
+        notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
 
         self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
         res = self.station.dispatch_rescue(v_id, target_level)

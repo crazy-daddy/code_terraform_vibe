@@ -630,10 +630,7 @@ class SeedMakerController:
             species = getattr(result, "species", "?")
             self._last_result = f"{key} -> {species}"
             self.log.color("#7CFC00").print(f"[{self.name}] NEW SEED: {key} -> '{species}' ({getattr(result, 'seed_id', '')}).")
-            try:
-                notify(f"Seed Maker found '{species}' ({key})", level="info", duration_seconds=8.0)
-            except Exception as error:
-                swallowed("seed_maker.SeedMakerController._run_trial: notify", error)
+            notify(f"Seed Maker found '{species}' ({key})", level="info", duration_seconds=8.0)
         elif status == "sludge":
             self._last_result = f"{key} -> sludge"
             self.log.print(f"[{self.name}] {key} -> sludge.")

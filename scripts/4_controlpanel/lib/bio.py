@@ -247,10 +247,7 @@ class BioExchangeController:
     def _on_order_complete(self, ord_info):
         """Announces a completed order and records its id in the archive."""
         reward_str = f" (+{ord_info.reward} credits)" if getattr(ord_info, "reward", 0) else ""
-        try:
-            notify(f"[Bio Order Complete] {ord_info.name}{reward_str}!", level="info", duration_seconds=10.0)
-        except Exception as error:
-            swallowed("bio.BioExchangeController.sweep_and_deliver: notify", error)
+        notify(f"[Bio Order Complete] {ord_info.name}{reward_str}!", level="info", duration_seconds=10.0)
         order_id = ord_info.id
         try:
             archive.transaction("bio.completed_orders", [], lambda lst: lst if order_id in lst else lst + [order_id])
@@ -342,10 +339,7 @@ class BioLabController:
         """Pause extraction while preserving the sample in the lab output."""
         if not self.inventory_full_notified:
             self.log.level("warn").print(f"[{self.name}] WARNING: local storage is full. Free space to resume sample extraction.")
-            try:
-                notify(f"[{self.name}] Storage Full! Free space to resume extraction.", level="warn", duration_seconds=8.0)
-            except Exception as error:
-                swallowed("bio.BioLabController.handle_storage_full: notify", error)
+            notify(f"[{self.name}] Storage Full! Free space to resume extraction.", level="warn", duration_seconds=8.0)
             self.inventory_full_notified = True
         flush_all()
         sleep(2.0)

@@ -78,10 +78,7 @@ class HarvesterController(MachineController):
                 return True
             elif res.status == "inventory_full":
                 self.log.level("warn").print(f"[{self.name}] WARNING: Base inventory full! Cannot store '{held}'.")
-                try:
-                    notify(f"[{self.name}] Base Inventory Full! Cannot store harvested items.", level="warn", duration_seconds=8.0)
-                except Exception as error:
-                    swallowed("harvesting.HarvesterController.store_held_if_any: notify", error)
+                notify(f"[{self.name}] Base Inventory Full! Cannot store harvested items.", level="warn", duration_seconds=8.0)
                 return False
             else:
                 self.log.level("warn").print(f"[{self.name}] Store notice: {res.status} - {res.message}")

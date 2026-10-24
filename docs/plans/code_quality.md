@@ -64,6 +64,7 @@ so step 2 is needed.
 | `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 | `notify()` called directly (2026-10-23) | 6 guarded `_notify` copies (`power`, `power_solar`, `reactor`, `oil_generator`, `script_parking`, `wildlife_planner`) | this branch |
+| `notify()` called directly, guards dropped (2026-10-24) | 10 guarded raw `notify()` sites (`bio` x2, `charging`, `drone_service`, `harvesting`, `seed_maker`, `thermal_cap`, `vehicle_cargo`, `vehicle_charging`, `vehicle_claims`). Not merged onto a helper: that would be the dropped `_notify` wrapper again. `notify()` only raises on bad arguments, so the guards hid our own bugs | this branch |
 | `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
 | `archive.get_dict()` (2026-10-24) | 20 def-level dict readers, 3 try-guarded readers, ~15 line-level `get(K, {})` + isinstance sites, 3 `autoplay` readers | helpers-impl-1 |
 | `vehicle_survey.spiral_next_index()` (2026-10-24) | 2 spiral readers that raised on a non-dict; `SURVEY_SPIRAL_KEY` defined twice | helpers-impl-1 |
@@ -96,7 +97,6 @@ Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in th
 12. merge `geometry.dist` (3 defs, 21 calls) and `game_clock.now_tick` (4 defs).
 13. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
 14. merge the small S families (`item_tiers.best_tier`, pickup ledger totals, `parking_client.is_shedded`, `priority.ladder_totals`, `field_layout.rc_to_sector`, lazy fail dicts, `_raise_target`, building type counts and more) and the remaining singles (ranks 14 and 15 of the candidates file).
-- Guarded raw `notify()` calls (`try: notify(...) except: swallowed`): `bio.py` (2), `charging.py`, `drone_service.py`, `harvesting.py`, `seed_maker.py`, `thermal_cap.py`, `vehicle_cargo.py`, `vehicle_charging.py`, `vehicle_claims.py` (all `scripts/4_controlpanel/lib`). `notify()` only raises on bad arguments, so the guards hide our own bugs; same rationale as the dropped wrappers.
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,
