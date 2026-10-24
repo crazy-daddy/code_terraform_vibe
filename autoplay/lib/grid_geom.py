@@ -25,6 +25,7 @@ from heapq import heappop, heappush
 
 from atomic import run_batched
 from game_rules import TILE_M
+from geometry import ceil_int
 
 FOOTPRINT_TILES = 4
 OUTPOST_PLACE_M = 20  # outpost placement square (2x2 tiles), anchored at its top-left corner
@@ -122,16 +123,11 @@ def _square(tx0, ty0):
     return [base + offset for offset in _offsets("square")]
 
 
-def _ceil_int(value):
-    whole = int(value // 1)
-    return whole + 1 if value > whole else whole
-
-
 def _centred_origin(cx, cy):
     """(tx0, ty0) of the FOOTPRINT_TILES square the game centres on (cx, cy): the tiles whose
     centres lie in [cx - half, cx + half) east-west and (cy - half, cy + half] north-south."""
     half = FOOTPRINT_TILES * TILE_M / 2
-    tx0 = _ceil_int((cx - half - TILE_M / 2) / TILE_M)
+    tx0 = ceil_int((cx - half - TILE_M / 2) / TILE_M)
     ty1 = int((cy + half - TILE_M / 2) // TILE_M)
     return (tx0, ty1 - FOOTPRINT_TILES + 1)
 

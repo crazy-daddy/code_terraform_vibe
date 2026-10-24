@@ -1,8 +1,9 @@
 import logistics_requests
 from archive import archive
 from game_clock import now_tick
+from geometry import ceil_int
 from machine_controller import port_counts
-from plant_terraformer_common import FERTILIZER_ITEM_IDS, PLANTS_BANDS, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
+from plant_terraformer_common import FERTILIZER_ITEM_IDS, PLANTS_BANDS, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, remaining_forage
 from plant_terraformer_demand import PlantTerraformerDemandMixin
 from plant_terraformer_water import PlantTerraformerWaterMixin
 from storage_take import take_item
