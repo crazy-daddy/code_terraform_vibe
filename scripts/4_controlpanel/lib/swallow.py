@@ -38,9 +38,11 @@ the lines inside an atomic call), not archive or tree_console, so every lib --
 including lib/archive.py, which tree_console itself depends on -- can use it.
 """
 
-from typing import Callable
+from typing import Callable, TypeVar
 
 from atomic import console_print
+
+_T = TypeVar("_T")
 
 _BUG_ERRORS = (TypeError, AttributeError, NameError, KeyError, IndexError, ZeroDivisionError)
 
@@ -92,6 +94,17 @@ def swallowed(where, error):
         # Logging must never turn a recovered error into a crash; nothing
         # left to report it with.
         pass
+
+
+def safe_call(where: str, read: "Callable[[], _T]", default: "_T") -> "_T":
+    """read(), or `default` after swallowed(where, error) when it raises. Pass a
+    bound method or a lambda, not a method name, so Pyright sees the call and
+    its type."""
+    try:
+        return read()
+    except Exception as error:
+        swallowed(where, error)
+        return default
 
 
 def call_or(where, obj, method, default, *args):

@@ -10,7 +10,7 @@
 # or paused (prune_planned()). Pioneers prune construction.priority themselves.
 
 from archive import archive
-from components import outposts
+from components import outpost_by_id
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY
 from grid_geom import bridge_tiles, run_tiles, tile_centre
 from infra_topology import NETWORKS_KEY
@@ -25,8 +25,7 @@ def _blueprints():
 
 def _construction_outpost():
     """OutpostRef where Constructor Pioneers load (production.construction_site_id()); None = home."""
-    site_id = construction_site_id()
-    return next((ref for ref in outposts() if ref.id == site_id), None)
+    return outpost_by_id(construction_site_id())
 
 
 def stock(item_id):
@@ -39,25 +38,19 @@ def stock(item_id):
 
 
 def _record(ids, entry, prio):
-    def planned_updater(planned):
-        if not isinstance(planned, dict):
-            planned = {}
+    def record_planned(planned):
         for blueprint_id in ids:
             planned[blueprint_id] = entry
-        return planned
 
-    archive.transaction(PLANNED_KEY, {}, planned_updater)
+    archive.mutate(PLANNED_KEY, record_planned)
     if prio == DEFAULT_PRIORITY:
         return
 
-    def priority_updater(priorities):
-        if not isinstance(priorities, dict):
-            priorities = {}
+    def record_priority(priorities):
         for blueprint_id in ids:
             priorities[blueprint_id] = prio
-        return priorities
 
-    archive.transaction(PRIORITY_KEY, {}, priority_updater)
+    archive.mutate(PRIORITY_KEY, record_priority)
 
 
 def cancel(ids):
@@ -75,17 +68,9 @@ def cancel(ids):
         if getattr(result, "status", "") == "ok":
             cancelled.append(blueprint_id)
     if cancelled:
-
-        def updater(planned):
-            if not isinstance(planned, dict):
-                return {}
-            for blueprint_id in cancelled:
-                planned.pop(blueprint_id, None)
-            return planned
-
-        archive.transaction(PLANNED_KEY, {}, updater)
+        archive.pop_entries(PLANNED_KEY, cancelled)
         if any(blueprint_id in (archive.get(PRIORITY_KEY, {}) or {}) for blueprint_id in cancelled):
-            archive.transaction(PRIORITY_KEY, {}, updater)
+            archive.pop_entries(PRIORITY_KEY, cancelled)
     return len(cancelled)
 
 
@@ -273,12 +258,5 @@ def prune_planned(live_ids, jobs_ok):
     if not stale:
         return 0
 
-    def updater(entries):
-        if not isinstance(entries, dict):
-            return {}
-        for blueprint_id in stale:
-            entries.pop(blueprint_id, None)
-        return entries
-
-    archive.transaction(PLANNED_KEY, {}, updater)
+    archive.pop_entries(PLANNED_KEY, stale)
     return len(stale)

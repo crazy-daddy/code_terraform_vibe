@@ -99,16 +99,26 @@ def balance():
 _prices = {}
 
 
-def shop_price(item_id, fallback=0):
-    """Shop catalogue price of item_id, cached per script run (prices are static)."""
-    if item_id in _prices:
-        return _prices[item_id]
+def shop_prices():
+    """{id: int(cost)} of the live Shop catalogue, read fresh (a kit's price rises per kit owned); {} if unreadable."""
     shop = component("shop")
+    prices = {}
     try:
         for entry in shop.get_catalogue() if shop else []:
-            _prices[entry.id] = int(entry.cost)
+            try:
+                prices[entry.id] = int(entry.cost)
+            except Exception as error:
+                swallowed("cash.shop_prices: entry cost", error)
     except Exception as error:
-        swallowed("cash.shop_price: shop.get_catalogue", error)
+        swallowed("cash.shop_prices: shop.get_catalogue", error)
+        return {}
+    return prices
+
+
+def shop_price(item_id, fallback=None):
+    """Shop catalogue price of item_id (int | None), cached per script run (static items such as reagents; use shop_prices() for kits)."""
+    if item_id not in _prices:
+        _prices.update(shop_prices())
     return _prices.get(item_id, fallback)
 
 
@@ -257,17 +267,15 @@ def keep(consumer):
         return
     now = now_tick()
 
-    def updater(state):
-        state = state if isinstance(state, dict) else {}
+    def refresh(state):
         ask = (state.setdefault("asks", {})).get(consumer)
         if isinstance(ask, dict):
             ask["tick"] = now
-        return state
 
     try:
-        archive.transaction(BUDGET_KEY, {}, updater)
+        archive.mutate(BUDGET_KEY, refresh)
     except Exception as error:
-        swallowed("cash.keep: archive.transaction", error)
+        swallowed("cash.keep: archive.mutate", error)
 
 
 def release(consumer):

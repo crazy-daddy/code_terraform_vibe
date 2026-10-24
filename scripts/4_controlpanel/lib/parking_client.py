@@ -106,16 +106,10 @@ def _unpark(woken, where):
     requests filed up to that tick, which must not park them again.
     """
 
-    def unpark(parked):
-        parked = parked if isinstance(parked, dict) else {}
-        for machine_id in woken:
-            parked.pop(machine_id, None)
-        return parked
-
     try:
-        archive.transaction(PARKED_KEY, {}, unpark)
+        archive.pop_entries(PARKED_KEY, woken)
     except Exception as error:
-        swallowed(f"parking_client.{where}: archive.transaction(PARKED_KEY)", error)
+        swallowed(f"parking_client.{where}: archive.pop_entries(PARKED_KEY)", error)
     _clear_requests(woken)
 
 

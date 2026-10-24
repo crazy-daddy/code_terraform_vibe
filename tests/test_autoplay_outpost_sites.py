@@ -8,6 +8,7 @@ import harness
 import outpost_sites as os_
 from construction_plan import ATOMIC_STEP_BUDGET
 from game_stubs import Journal, Site
+from geometry import dist
 from test_autoplay_geom import ops
 
 BOUNDS = (-900.0, 900.0, -900.0, 900.0)
@@ -178,7 +179,7 @@ class ScoreTests(unittest.TestCase):
         ]
         ctx = os_.prepare(world(sites=sites), west_frozen)
         best = os_.rank_sites(mining("iron_ore", "silicon", "cobalt"), ctx, PRESETS)[0]
-        self.assertLess(os_._dist(best["x"], best["y"], 410, 410), 200)
+        self.assertLess(dist(best["x"], best["y"], 410, 410), 200)
         self.assertGreater(best["confidence"], os_.MIN_CONFIDENCE)
         self.assertFalse(best["survey"])
 
@@ -186,7 +187,7 @@ class ScoreTests(unittest.TestCase):
         pois = [{"x": 400 + 30 * i, "y": 400, "kind": "unknown"} for i in range(4)]
         ctx = os_.prepare(world(pois=pois), west_frozen)
         best = os_.rank_sites(mining("iron_ore"), ctx, PRESETS)[0]
-        self.assertLess(os_._dist(best["x"], best["y"], 450, 400), 250)
+        self.assertLess(dist(best["x"], best["y"], 450, 400), 250)
         self.assertGreater(best["terms"]["ore"], 0)
         self.assertTrue(best["survey"])
         known = os_.prepare(world(sites=[mineral(400, 400, "iron_ore")]), west_frozen)

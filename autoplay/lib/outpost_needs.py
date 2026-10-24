@@ -98,13 +98,14 @@ from autoplay_roles import BIO_PROCESSORS, EXCLUSIVE_SHARE_ROLES, HOME_RESERVED_
 from extractor_plan import mining_sites, smelter_outposts
 from game_clock import now_tick
 from game_rules import BIOMES, RAW_ORE_ITEM_IDS
+from geometry import dist
 from grid_geom import extractor_box, outpost_box
 from infra_topology import surveyed_sites
 from logistics_requests import drone_yield_enabled
 from outpost_mining import resource_assignment_range_m
 from storage import PENALIZED_TYPES
 from supply_tiers import NEAR_TILES, fluid_sites, gap
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from wildlife_common import FEED_KEY, recipe_of
 from wildlife_data import SPECIES
 
@@ -196,10 +197,6 @@ def near_fluid(entry, snap, fluid):
     return gap(box, boxes) <= NEAR_TILES
 
 
-def _dist(ax, ay, bx, by):
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
-
-
 def unreached_ores(wanted, ore_sites, outposts, range_m):
     """Wanted ores with surveyed sites, none within range_m of an outpost and none drilled (drones fetch from a drill anywhere); sorted."""
     out = []
@@ -207,7 +204,7 @@ def unreached_ores(wanted, ore_sites, outposts, range_m):
         sites = [row for row in ore_sites if row["item"] == ore]
         if not sites or any(row.get("drill") for row in sites):
             continue
-        if not any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites for entry in outposts):
+        if not any(dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites for entry in outposts):
             out.append(ore)
     return out
 
@@ -405,7 +402,7 @@ def _site_ok(need, entry, snap):
         return near_fluid(entry, snap, need["site_fluid"])
     if need.get("ores"):
         range_m = snap.get("range_m", 0)
-        return all(any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in snap.get("ore_sites", []) if row["item"] == ore) for ore in need["ores"])
+        return all(any(dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in snap.get("ore_sites", []) if row["item"] == ore) for ore in need["ores"])
     return True
 
 
@@ -541,7 +538,7 @@ def _ores_in_reach(entry, snap):
     """Wanted ores (snap["ore_wanted"]) with a surveyed site within range_m of the outpost."""
     range_m = snap.get("range_m", 0)
     sites = snap.get("ore_sites", [])
-    return [ore for ore in snap.get("ore_wanted", []) if any(row["item"] == ore and _dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites)]
+    return [ore for ore in snap.get("ore_wanted", []) if any(row["item"] == ore and dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m for row in sites)]
 
 
 def undesignated_item(entry, open_needs, hosted, snap):
@@ -632,11 +629,7 @@ def log_plan(log: "TreeConsole", open_needs, plan):
 
 def _call(name: str, read: "Callable[[], _T]", default: "_T") -> "_T":
     """read(), or default when it raises. A lambda, not a method name, so Pyright sees the call and its type."""
-    try:
-        return read()
-    except Exception as error:
-        swallowed("outpost_needs._call: " + name, error)
-        return default
+    return safe_call("outpost_needs._call: " + name, read, default)
 
 
 def read_outposts(roles_map):

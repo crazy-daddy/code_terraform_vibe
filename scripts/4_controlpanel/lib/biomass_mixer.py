@@ -4,7 +4,7 @@ from biomass_retire import biomass_complete
 from game_clock import now_tick
 from game_rules import BIOMES, LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from tree_console import TreeConsole
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
@@ -145,11 +145,7 @@ class BiomassMixerController(MachineController):
         self._was_stalled = False
 
     def _read(self, method, default):
-        try:
-            return getattr(self.mixer, method)()
-        except Exception as error:
-            swallowed("biomass_mixer.BiomassMixerController._read: getattr(self.mixer, method)", error)
-            return default
+        return safe_call("biomass_mixer.BiomassMixerController._read: getattr(self.mixer, method)", lambda: getattr(self.mixer, method)(), default)
 
     def ensure_input_connections(self):
         curr_tick = self.get_current_tick()

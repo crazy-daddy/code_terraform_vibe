@@ -219,7 +219,7 @@ class HabitatController(MachineController):
                 self.blocker = "reagent_supply"
                 continue
             buy_qty = missing - moved
-            cost = buy_qty * cash.shop_price(reagent)
+            cost = buy_qty * cash.shop_price(reagent, 0)
             cash_id = f"wildlife_reagents:{self.name}"
             if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent}"):
                 self.blocker = "reagent_budget"

@@ -168,15 +168,13 @@ def mark_retire_ready(machine_id):
     """Called by the machine's own script once it is empty; the job undeploys it next step."""
     tick = now_tick("building_ops.mark_retire_ready")
 
-    def updater(cur):
-        cur = cur if isinstance(cur, dict) else {}
+    def ready(cur):
         entry = cur.get(machine_id)
         if isinstance(entry, dict):
             entry["state"] = "ready"
             entry["tick"] = tick
-        return cur
 
-    return archive.transaction(RETIRE_KEY, {}, updater)
+    return archive.mutate(RETIRE_KEY, ready)
 
 
 # ---------- requests ----------
@@ -251,15 +249,13 @@ def _set_retire(cur, machine_id, job_id, tick):
 def _patch(job_id, **fields):
     tick = now_tick("building_ops._patch")
 
-    def updater(cur):
-        cur = cur if isinstance(cur, dict) else {}
+    def stamp(cur):
         job = cur.get(job_id)
         if isinstance(job, dict):
             job.update(fields)
             job["tick"] = tick
-        return cur
 
-    return archive.transaction(JOBS_KEY, {}, updater)
+    return archive.mutate(JOBS_KEY, stamp)
 
 
 def _prune(now):

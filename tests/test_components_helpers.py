@@ -1,11 +1,21 @@
-"""lib/components.py guarded reads: research_unlocked / all_research_unlocked, outposts()."""
+"""lib/components.py guarded reads: research_unlocked / all_research_unlocked, outposts(), per-outpost lookups, sensor_value."""
 
 import unittest
 
 import harness
-from components import all_research_unlocked, home_outpost, outposts, research_unlocked
+from components import (
+    all_research_unlocked,
+    building_ids_at,
+    components_at,
+    home_outpost,
+    outpost_by_id,
+    outposts,
+    research_unlocked,
+    sensor_value,
+)
 from game_stubs import OutpostNetwork, Research
 from production_core import _all_outposts
+from production_sites import outpost_by_site_id
 from storage_expand import StorageExpander
 from warehouse_upgrade import WarehouseUpgrader
 
@@ -76,6 +86,88 @@ class ResearchUnlockedTests(harness.StubTestCase):
         self.world.inventory.add("large_warehouse", 1)
         self.assertTrue(upgrader._large_unlocked())
         self.assertTrue(expander._unlocked("large_warehouse", "research_high_bay_warehousing"))
+
+
+class _RaisingOutpost:
+    id = "outpost_bad"
+
+    def buildings(self, type_id=None):
+        raise RuntimeError("buildings offline")
+
+
+class PerOutpostLookupTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.out = self.world.add_outpost("outpost_2")
+        self.world.add_building("b2", self.out, "habitat")
+        self.world.add_building("b1", self.out, "habitat")
+        self.world.add_building("w1", self.out, "waste_processor")
+        self.world.add_building("", self.out, "habitat")
+
+    def test_building_ids_at_sorted_drops_empty(self):
+        self.assertEqual(building_ids_at(self.out, "habitat"), ["b1", "b2"])
+
+    def test_building_ids_at_raise_reads_empty(self):
+        self.assertEqual(building_ids_at(_RaisingOutpost(), "habitat", "test.where"), [])
+        self.assertIn("[swallowed] test.where:", self.debug_log())
+
+    def test_building_ids_at_none_outpost_reads_empty(self):
+        self.assertEqual(building_ids_at(None, "habitat"), [])
+
+    def test_outpost_by_id_finds_ref(self):
+        self.assertEqual(getattr(outpost_by_id("outpost_2"), "id", None), "outpost_2")
+
+    def test_outpost_by_id_unknown_is_none(self):
+        self.assertIsNone(outpost_by_id("nope"))
+
+    def test_components_at_resolves_components(self):
+        found = components_at(self.out, "waste_processor")
+        self.assertEqual([c.id for c in found], ["w1"])
+
+    def test_components_at_drops_unresolved(self):
+        del self.world.components["b1"]
+        self.assertEqual([c.id for c in components_at(self.out, "habitat")], ["b2", ""])
+
+    def test_components_at_none_outpost_reads_empty(self):
+        self.assertEqual(components_at(None, "habitat"), [])
+
+    def test_components_at_raise_reads_empty(self):
+        self.assertEqual(components_at(_RaisingOutpost(), "habitat", "test.where"), [])
+        self.assertIn("[swallowed] test.where:", self.debug_log())
+
+
+class SensorValueTests(harness.StubTestCase):
+    def test_sensor_value_reads_float(self):
+        self.world.add_wildlife_sensor(7)
+        self.assertEqual(sensor_value("wildlife_sensor", "test.where"), 7.0)
+
+    def test_sensor_value_missing_sensor_is_none(self):
+        del self.world.services["wildlife_sensor"]
+        self.assertIsNone(sensor_value("wildlife_sensor", "test.where"))
+
+    def test_sensor_value_raise_is_none(self):
+        self.world.add_wildlife_sensor(7).broken = True
+        self.assertIsNone(sensor_value("wildlife_sensor", "test.where"))
+        self.assertIn("[swallowed] test.where:", self.debug_log())
+
+
+class OutpostBySiteIdTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.add_outpost("outpost_2")
+
+    def test_network_readable_finds_site(self):
+        self.assertEqual(getattr(outpost_by_site_id("outpost_2"), "id", None), "outpost_2")
+        self.assertIsNone(outpost_by_site_id("nope"))
+
+    def test_network_unreadable_resolves_home_id(self):
+        home = home_outpost()
+        self.world.services["outpost_network"] = _RaisingNetwork(self.world)
+        self.assertEqual(getattr(outpost_by_site_id(getattr(home, "id", "")), "id", None), getattr(home, "id", ""))
+
+    def test_network_unreadable_other_id_is_none(self):
+        self.world.services["outpost_network"] = _RaisingNetwork(self.world)
+        self.assertIsNone(outpost_by_site_id("outpost_2"))
 
 
 if __name__ == "__main__":

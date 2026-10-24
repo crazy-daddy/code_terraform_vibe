@@ -142,13 +142,7 @@ def publish(name, telemetry):
         log.trace(f"publish({name!r}): unchanged, {tick - last[1]} < {FLEET_STATUS_MIN_INTERVAL_TICKS} ticks since last write; skipped.")
         return False
 
-    def updater(status):
-        if not isinstance(status, dict):
-            status = {}
-        status[name] = telemetry
-        return status
-
-    archive.transaction(FLEET_STATUS_KEY, {}, updater)
+    archive.set_entry(FLEET_STATUS_KEY, name, telemetry)
     _last_published[name] = (payload, tick)
     return True
 
@@ -160,17 +154,10 @@ def get_all():
 
 def get(name):
     """Returns name's last published telemetry dict, or None."""
-    entry = get_all().get(name)
-    return entry if isinstance(entry, dict) else None
+    return archive.dict_entry(FLEET_STATUS_KEY, name)
 
 
 def forget(name):
     """Drops name's entry, e.g. once the vehicle/drone no longer exists."""
-
-    def updater(status):
-        if isinstance(status, dict):
-            status.pop(name, None)
-        return status
-
-    archive.transaction(FLEET_STATUS_KEY, {}, updater)
+    archive.pop_entry(FLEET_STATUS_KEY, name)
     _last_published.pop(name, None)

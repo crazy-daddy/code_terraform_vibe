@@ -137,11 +137,9 @@ def default_root_sites(consumer_sites, fab_sites):
 
 
 def outpost_by_site_id(site_id):
-    """OutpostRef with this id, None when not found."""
-    for outpost in _all_outposts():
-        if getattr(outpost, "id", None) == site_id:
-            return outpost
-    return None
+    """OutpostRef with this id, None when not found. With the network unreadable
+    the home outpost still resolves for its own id (_all_outposts() fallback)."""
+    return next((o for o in _all_outposts() if getattr(o, "id", None) == site_id), None)
 
 
 def root_remaining(item_id, target, cache: "SourceCache"):

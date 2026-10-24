@@ -122,14 +122,7 @@ def fleet_upgrade_state():
 
 def update_fleet_upgrade(mutate):
     """Atomically applies mutate(state_dict) to FLEET_UPGRADE_KEY (mutate edits in place)."""
-
-    def updater(state):
-        if not isinstance(state, dict):
-            state = {}
-        mutate(state)
-        return state
-
-    return archive.transaction(FLEET_UPGRADE_KEY, {}, updater)
+    return archive.mutate(FLEET_UPGRADE_KEY, mutate)
 
 
 def is_upgrade_enabled():
@@ -212,13 +205,11 @@ def commission_engine(unlocked, inventory_count):
 
 
 def drone_swap_entry(drone_id):
-    entry = (fleet_upgrade_state().get("drones") or {}).get(drone_id)
-    return entry if isinstance(entry, dict) else None
+    return archive.dict_entry(FLEET_UPGRADE_KEY, "drones", drone_id)
 
 
 def lineage_entry(drone_id):
-    entry = (fleet_upgrade_state().get("lineage") or {}).get(drone_id)
-    return entry if isinstance(entry, dict) else None
+    return archive.dict_entry(FLEET_UPGRADE_KEY, "lineage", drone_id)
 
 
 def inherited_params(drone_id):

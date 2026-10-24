@@ -21,7 +21,7 @@
 # cask room. Entries older than INBOUND_STALE_TICKS are ignored and pruned.
 
 from archive import archive
-from components import home_outpost, outposts
+from components import components_at, home_outpost, outposts
 from game_clock import is_fresh
 from swallow import swallowed
 
@@ -112,17 +112,7 @@ def cask_stock(item_id, outpost: "OutpostRef | None" = None, casks=None):
 def _components_at(outpost: "OutpostRef | None", type_id):
     if outpost is None or not hasattr(outpost, "buildings"):
         return []
-    try:
-        refs = outpost.buildings(type_id)
-    except Exception as error:
-        swallowed("lead_cask._components_at: outpost.buildings", error)
-        return []
-    out = []
-    for ref in refs or []:
-        component = get_component(getattr(ref, "id", ""))
-        if component is not None:
-            out.append(component)
-    return out
+    return components_at(outpost, type_id, "lead_cask._components_at: outpost.buildings")
 
 
 def rod_consumers(outpost: "OutpostRef | None"):

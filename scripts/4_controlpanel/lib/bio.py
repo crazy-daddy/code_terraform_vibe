@@ -559,7 +559,7 @@ class BioLabController:
             self._pause(2.0)
             return False
         buy_qty = missing - local_have
-        cost = buy_qty * cash.shop_price(reagent_id)
+        cost = buy_qty * cash.shop_price(reagent_id, 0)
         cash_id = f"bio_reagents:{self.name}"
         if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent_id}"):
             self.log.debug(f"[{self.name}] {buy_qty}x {reagent_id} ({cost} cr): cash manager holds it back.")

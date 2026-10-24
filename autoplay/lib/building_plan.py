@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING
 import autoplay_roles
 import build_providers
 import building_ops
+import cash
 import components
 import focus_plan
 import game_phase
@@ -66,11 +67,11 @@ import pillar_swap
 from archive import archive
 from autoplay_roles import WAREHOUSE_SLOTS, WAREHOUSES, kit_id, role_gaps, stock_slots, warehouse_slots
 from components import component, machine_tier
-from game_clock import is_fresh
+from game_clock import is_fresh, now_tick
 from logistics_requests import PICKUP_STALE_TICKS, drone_yield_enabled
 from priority import BUILD
 from storage import PENALIZED_TYPES, inventory_count
-from swallow import swallowed
+from swallow import safe_call, swallowed
 
 ROLE_DEMAND_KEY = "fleet.role_demand"  # = role_demand.ROLE_DEMAND_KEY
 ROLE_DEMAND_STALE_TICKS = 3000  # = role_demand.ROLE_DEMAND_STALE_TICKS
@@ -93,12 +94,7 @@ TIERED_TYPES = build_providers.GENERATOR_TYPES + build_providers.FACTORY_TYPES  
 
 
 def _tick():
-    try:
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-    except Exception as error:
-        swallowed("building_plan._tick: clock.tick", error)
-        return 0
+    return now_tick("building_plan._tick: clock.tick")
 
 
 # ---------- providers (pure) ----------
@@ -584,22 +580,11 @@ def pioneer_missions(tick):
 
 def _safe(name, read, default):
     """read(), or default when it raises (one failing reader must not drop every provider)."""
-    try:
-        return read()
-    except Exception as error:
-        swallowed("building_plan.build_context: " + name, error)
-        return default
+    return safe_call("building_plan.build_context: " + name, read, default)
 
 
 def read_prices():
-    shop = component("shop")
-    if shop is None:
-        return {}
-    try:
-        return {item.id: int(item.cost) for item in shop.get_catalogue() or []}
-    except Exception as error:
-        swallowed("building_plan.read_prices: shop.get_catalogue", error)
-        return {}
+    return cash.shop_prices()
 
 
 def build_context(snap, phase, focus, tick):

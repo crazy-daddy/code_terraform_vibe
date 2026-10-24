@@ -306,7 +306,7 @@ class DroneHaulerMixin:
             if qty <= 0:
                 self._host.log.debug(f"buy {item_id}: home Inventory has no room; {bought}/{units} bought.")
                 break
-            cost = qty * cash.shop_price(item_id)
+            cost = qty * cash.shop_price(item_id, 0)
             if not cash.can_spend(cash_id, cost, label=f"{qty}x {item_id}"):
                 self._host.log.debug(f"buy {qty}x {item_id} ({cost} cr): cash manager holds it back.")
                 break

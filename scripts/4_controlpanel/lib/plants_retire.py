@@ -2,7 +2,7 @@ import fluid_routing
 from archive import STATUS_STALE_TICKS, archive
 from building_ops import undeploy
 from plant_terraformer_common import STATUS_KEY
-from swallow import swallowed
+from swallow import safe_call, swallowed
 from tree_console import TreeConsole
 
 # Plants completion: undeploy the Plant Terraformers (Control Room
@@ -40,11 +40,7 @@ def plants_complete():
 
 
 def _call(obj, method, default):
-    try:
-        return getattr(obj, method)()
-    except Exception as error:
-        swallowed("plants_retire._call: getattr(obj, method)", error)
-        return default
+    return safe_call("plants_retire._call: getattr(obj, method)", lambda: getattr(obj, method)(), default)
 
 
 class PlantsRetirement:

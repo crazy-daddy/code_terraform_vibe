@@ -191,12 +191,7 @@ class FleetCommissionCoordinator:
     # ------------------------------------------------------------ lookups
 
     def _catalogue(self):
-        shop = component("shop")
-        try:
-            return {entry.id: entry.cost for entry in shop.get_catalogue()} if shop else {}
-        except Exception as error:
-            swallowed("fleet_commission.FleetCommissionCoordinator._catalogue: shop.get_catalogue", error)
-            return {}
+        return cash.shop_prices()
 
     def _kit_wait_text(self, job_id, label, short):
         """

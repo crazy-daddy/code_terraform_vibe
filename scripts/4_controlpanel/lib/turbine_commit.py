@@ -293,27 +293,20 @@ class TurbineCommitment:
     def _heartbeat(grid_id_str, now):
         """Marks this grid as committed (COMMIT_HEARTBEAT_KEY) so its turbines stop easing on their own."""
 
-        def updater(beats):
-            beats = beats if isinstance(beats, dict) else {}
-            beats[grid_id_str] = now
-            return beats
-
         try:
-            archive.transaction(COMMIT_HEARTBEAT_KEY, {}, updater)
+            archive.set_entry(COMMIT_HEARTBEAT_KEY, grid_id_str, now)
         except Exception as error:
-            swallowed("turbine_commit._heartbeat: archive.transaction", error)
+            swallowed("turbine_commit._heartbeat: archive.set_entry", error)
 
     @staticmethod
     def _record(woke, parked_now, now, grid_id_str):
-        def updater(parked):
-            parked = parked if isinstance(parked, dict) else {}
+        def apply_change(parked):
             for t in woke:
                 parked.pop(t, None)
             for t in parked_now:
                 parked[t] = {"kind": TURBINE_TYPE_ID, "mode": PARK_MODE, "since": now, "grid": grid_id_str}
-            return parked
 
         try:
-            archive.transaction(PARKED_KEY, {}, updater)
+            archive.mutate(PARKED_KEY, apply_change)
         except Exception as error:
-            swallowed("turbine_commit._record: archive.transaction", error)
+            swallowed("turbine_commit._record: archive.mutate", error)

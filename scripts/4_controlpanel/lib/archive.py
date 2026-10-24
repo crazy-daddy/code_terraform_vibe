@@ -136,13 +136,10 @@ class ArchiveClient:
     def set_entry(self, key, entry_id, value):
         """Atomically sets key[entry_id] = value."""
 
-        def updater(entries):
-            if not isinstance(entries, dict):
-                entries = {}
+        def put(entries):
             entries[entry_id] = value
-            return entries
 
-        return self.transaction(key, {}, updater)
+        return self.mutate(key, put)
 
     def publish_status(self, key, name, entry, tick, log: "TreeConsole", stale_ticks=STATUS_STALE_TICKS):
         """
@@ -176,16 +173,49 @@ class ArchiveClient:
             log.debug(f"[{name}] pruned stale {key}['{other_id}'].")
         return True
 
+    def mutate(self, key, fn):
+        """Atomically edits the dict under key in place: fn(state) on the
+        stored dict (a missing or non-dict value starts as {}), then writes it
+        back. fn must be pure (it may run more than once) and must not log.
+        Returns the transaction's bool."""
+
+        def updater(state):
+            if not isinstance(state, dict):
+                state = {}
+            fn(state)
+            return state
+
+        return self.transaction(key, {}, updater)
+
+    def pop_entries(self, key, entry_ids):
+        """Atomically removes every key[entry_id] in entry_ids (absent ones are
+        no-ops). A non-dict stored value is written back as {}."""
+
+        ids = list(entry_ids)
+
+        def drop(state):
+            for entry_id in ids:
+                state.pop(entry_id, None)
+
+        return self.mutate(key, drop)
+
+    def dict_entry(self, key, *path):
+        """Walks nested dicts from key along path; the leaf when it is a dict,
+        else None. Returns the stored object: copy it before mutating."""
+        node = self.get_dict(key)
+        for part in path:
+            if not isinstance(node, dict):
+                return None
+            node = node.get(part)
+        return node if isinstance(node, dict) else None
+
     def pop_entry(self, key, entry_id):
         """Atomically removes key[entry_id] (no-op if absent)."""
 
-        def updater(entries):
-            if not isinstance(entries, dict):
-                return {}
+        def drop(entries):
             entries.pop(entry_id, None)
-            return entries
 
-        return self.transaction(key, {}, updater)
+        return self.mutate(key, drop)
 
 
 # Singleton / default instance

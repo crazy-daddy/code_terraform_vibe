@@ -11,7 +11,6 @@ lib/fluid_routing.py::ensure_input_logged ~ lib/fluid_routing.py::ensure_output_
 lib/field_provider.py::FieldProviderController.ensure_water ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin.ensure_water  # already thin glue over shared router helpers
 lib/field_provider.py::FieldProviderController._discover_water_sources ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin._discover_water_sources  # home field vs own outpost
 lib/fluid_pump.py::FluidPumpController.ensure_output_connection ~ lib/thermal_cap.py::ThermalCapController.ensure_output_connection  # already on ensure_output_logged; only messages differ
-lib/archive.py::ArchiveClient.pop_entry ~ lib/archive.py::ArchiveClient.set_entry  # transaction updater boilerplate, different mutations
 lib/archive.py::ArchiveClient.delete ~ lib/archive.py::ArchiveClient.set  # thin wrappers over different archive calls
 lib/archive.py::ArchiveClient.set ~ lib/archive.py::ArchiveClient.transaction  # thin wrappers over different archive calls
 lib/archive.py::ArchiveClient.has ~ lib/archive.py::ArchiveClient.keys  # thin wrappers over different archive calls
@@ -31,7 +30,6 @@ lib/site_supply.py::free_elsewhere ~ lib/site_supply.py::free_elsewhere_tiers  #
 lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
 lib/steam_condenser.py::SteamCondenserController.update_steam_gate ~ lib/steam_condenser.py::SteamCondenserController.update_water_gate  # HysteresisLatch owns the rule; messages differ
 lib/steam_condenser.py::SteamCondenserController.update_water_gate ~ lib/terraforming.py::Mk3FluidFeed._update_guard  # HysteresisLatch owns the rule; messages and port disconnect differ
-lib/charging_stations.py::station_at ~ lib/outpost_mining.py::outpost_by_id  # first building with coords vs outpost by id
 lib/lead_cask.py::rods_for_orders ~ lib/lead_cask.py::rods_free_for_mk4  # the held source is the rule each documents
 lib/fluid_routing.py::fill_pct_of ~ lib/fluid_routing.py::safe_is_stalled  # safe call boilerplate, different reads
 lib/logistics_requests.py::PlanReads.scan ~ lib/production_source.py::SourceCache.scan  # per-pass memo vs per-object cache, different lifetimes
@@ -85,3 +83,4 @@ lib/bio_coastal.py::BioLuminizerController.__init__ ~ lib/bio_geothermal.py::Dna
 lib/feed_maker.py::FeedMakerController.recipes ~ lib/refiner.py::RefinerController.unlocked_recipes  # both already TickCache glue
 lib/construction_plan.py::at_priority ~ lib/construction_plan.py::ids_needing  # one list filter per field
 lib/bio_retire.py::biome_retired ~ lib/lead_cask.py::network_cask_stock  # any vs sum over the same outpost walk
+lib/components.py::sensor_value ~ lib/game_clock.py::now_tick  # safe call boilerplate, different reads
