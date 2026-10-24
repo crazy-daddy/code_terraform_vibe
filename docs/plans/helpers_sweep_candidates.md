@@ -383,6 +383,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Found by: C
 - Verdict: **merge** one, **keep** one.
   - `water_sink._water_tanks` -> `[(t, fill_pct_of(t)) for t, oid in fluid_routing.discover_network_buildings(LIQUID_TANK_TYPE_IDS, fluid_id=WATER_FLUID_ID) if oid == own_id]` (same eligibility test, same resolve; water_sink imports fluid_routing already). The trace line per tank moves with it.
+  - Apart (implementation, Task 3.3): `water_sink._water_tanks` stays on its own-outpost walk. `discover_network_buildings` is not memoized, so the merge would turn a per-cycle one-outpost read into a per-cycle network walk (`poi_extractor_ids`, `get_tank_assignments`, every outpost's tanks), and one outpost's `buildings()` raising would drop the own outpost's tanks.
   - Apart: `wildlife_planner._tank_refs` runs inside `run_atomic` with a caller-supplied outpost list and retiring set; `discover_network_buildings` calls `poi_extractor_ids`, `get_tank_assignments` (archive) and `log.trace`, whose purity inside the runner is unverified.
   - Risk: low. Size: S.
 

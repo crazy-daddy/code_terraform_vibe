@@ -65,13 +65,24 @@ class WaterAwareWasteSinkController(WasteSinkController):
         if not outpost or not hasattr(outpost, "buildings"):
             return []
         tanks = []
-        own_id = getattr(outpost, "id", None)
-        for tank, outpost_id in fluid_routing.discover_network_buildings(LIQUID_TANK_TYPE_IDS, fluid_id=WATER_FLUID_ID):
-            if outpost_id != own_id:
+        assignments = fluid_routing.get_tank_assignments()
+        for type_id in LIQUID_TANK_TYPE_IDS:
+            try:
+                refs = list(outpost.buildings(type_id))
+            except Exception as error:
+                swallowed("water_sink.WaterAwareWasteSinkController._water_tanks: outpost.buildings", error)
                 continue
-            fill = fluid_routing.fill_pct_of(tank)
-            self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill * 100:.0f}%.")
-            tanks.append((tank, fill))
+            for ref in refs:
+                try:
+                    tank = get_component(ref.id) or ref
+                except Exception as error:
+                    swallowed("water_sink.WaterAwareWasteSinkController._water_tanks: get_component", error)
+                    continue
+                if not fluid_routing.tank_is_eligible_target(tank, WATER_FLUID_ID, assignments):
+                    continue
+                fill = fluid_routing.fill_pct_of(tank)
+                self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill * 100:.0f}%.")
+                tanks.append((tank, fill))
         return tanks
 
     def _stalled_water_pump(self):
