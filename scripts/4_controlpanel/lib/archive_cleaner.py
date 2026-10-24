@@ -11,6 +11,7 @@ from fluid_routing import discover_network_buildings
 from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
+from production_core import FABRICATOR_WANTS_KEY, SMELTER_WANTS_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
 from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_tile, merge_unsupported
@@ -88,12 +89,14 @@ STATUS_TICK_KEYS = (
     "biomass_mixer.status",
     "drill.status",
     "essence_liquifier.status",
+    FABRICATOR_WANTS_KEY,
     "plant.automators",
     "plant.providers",
     "plant.status",
     "plant.terraformer",
     "refiner.status",
     "seed_maker.status",
+    SMELTER_WANTS_KEY,
     "waste_sink.status",
     "wildlife.feed",
     "wildlife.status",

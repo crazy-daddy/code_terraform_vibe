@@ -112,7 +112,14 @@ class PublishStatusKeysListedTests(unittest.TestCase):
                     and node.func.value.id == "archive"
                 ):
                     continue
-                if any(k.arg == "stale_ticks" for k in node.keywords) or not node.args:
+                # stale_ticks=None keeps others (pruned elsewhere); any other value still needs the cleaner.
+                if (
+                    any(
+                        k.arg == "stale_ticks" and isinstance(k.value, ast.Constant) and k.value.value is None
+                        for k in node.keywords
+                    )
+                    or not node.args
+                ):
                     continue
                 arg = node.args[0]
                 module = importlib.import_module(module_name)
