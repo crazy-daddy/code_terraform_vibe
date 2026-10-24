@@ -330,16 +330,13 @@ def set_order(requester, items, site=None, stale_ticks=None):
     if ORDER_STALE_FIELD in entry:
         entry[ORDER_TICK_FIELD] = tick
 
-    def updater(orders):
-        if not isinstance(orders, dict):
-            orders = {}
+    def apply(orders):
         if entry:
             orders[requester] = entry
         else:
             orders.pop(requester, None)
-        return orders
 
-    archive.transaction(ORDERS_KEY, {}, updater)
+    archive.mutate(ORDERS_KEY, apply)
     before = {i: sum(p[0] for p in _order_pairs(l)) for i, l in current.items() if not i.startswith("@")} if _order_live(current, tick) else {}
     after = {i: sum(p[0] for p in pairs) for i, pairs in wanted.items()}
     wake_on_rise(("fabricator",), before, after, f"{ORDERS_KEY} from {requester}:")

@@ -217,15 +217,13 @@ def order_overrides():
 def set_order_override(order_id, prio):
     """Sets (prio 0-999) or clears (None) the operator override of one order."""
 
-    def updater(stored):
-        stored = dict(stored) if isinstance(stored, dict) else {}
+    def apply(stored):
         if prio is None:
             stored.pop(order_id, None)
         else:
             stored[order_id] = clamp(prio)
-        return stored
 
-    archive.transaction(PRIORITY_OVERRIDE_KEY, {}, updater)
+    archive.mutate(PRIORITY_OVERRIDE_KEY, apply)
 
 
 def _order_prio(order: "Order", score, overrides):
