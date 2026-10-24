@@ -358,6 +358,21 @@ class HarvesterHubMixin:
 
     # ------------------------------------------------------------- cell views
 
+    def cell_view(self, cells):
+        """
+        (statuses, planted cells, base sector or None) of the step's cell read: one pass in atomic
+        harvester_pure.cell_view() chunks of harvester_pure.VIEW_CHUNK cells.
+        """
+        items = list(cells.items())
+        size = harvester_pure.VIEW_CHUNK
+        statuses, planted, base = {}, {}, None
+        for i in range(0, len(items), size):
+            part_statuses, part_planted, part_base = run_atomic(harvester_pure.cell_view, items[i : i + size], PLANT_STATUSES)
+            statuses.update(part_statuses)
+            planted.update(part_planted)
+            base = base or part_base
+        return statuses, planted, base
+
     def cell_statuses(self, cells):
         """{sector: Cell.status} of `cells`: the step's shared dict when `cells` is the step's read, else a fresh one."""
         fp = self._host.field_pass
