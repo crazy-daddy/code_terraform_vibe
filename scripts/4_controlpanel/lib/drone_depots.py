@@ -10,6 +10,7 @@
 import geometry
 from archive import archive
 from components import drone_service_station, outposts, research_unlocked
+from construction_plan import coords_of
 from game_clock import TickCache
 from item_tiers import DEPOT_TYPE_TIERS
 from swallow import swallowed
@@ -122,18 +123,6 @@ def heli_capable_services(services):
     return services, "all"
 
 
-def _extract_coords(pos):
-    if pos is None:
-        return None
-    if isinstance(pos, (tuple, list)) and len(pos) >= 2:
-        return (float(pos[0]), float(pos[1]))
-    x = getattr(pos, "x", None)
-    y = getattr(pos, "y", None)
-    if x is not None and y is not None:
-        return (float(x), float(y))
-    return None
-
-
 def discover_drone_buildings(type_id):
     """Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only. See _scan_drone_buildings()."""
     key = tuple(type_id) if isinstance(type_id, (tuple, list)) else (type_id,)
@@ -167,7 +156,7 @@ def _scan_drone_buildings(type_id):
             b_id = getattr(b, "id", "")
             if not b_id or b_id in found_ids:
                 continue
-            pos = _extract_coords(getattr(b, "position", None))
+            pos = coords_of(getattr(b, "position", None))
             if not pos:
                 continue
             found_ids.add(b_id)
