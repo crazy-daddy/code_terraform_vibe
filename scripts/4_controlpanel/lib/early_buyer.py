@@ -285,6 +285,8 @@ class EarlyBuyer:
             if removed >= to_remove:
                 break
             status = building_ops.undeploy(b_id, logger=log, computer=computer, tag="[early_buyer] ")
+            if status in building_ops.CALL_FAILED_STATUSES:
+                break  # the wrapper could not ask the game: wait for the next pass
             if status == "ok":
                 removed += 1
                 log.print(f"[early_buyer] Undeployed {b_id} (freed slot)")
