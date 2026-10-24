@@ -151,6 +151,15 @@ class EarlyBuyerTests(StubTestCase):
         self.assertEqual(self.count("temp_heater"), heaters)
         self.assertFalse(shop.sold)
 
+    def test_undeploy_call_failure_stops_the_pass(self):
+        w = self.world
+        self.pillars.update(o2=2.5, heat=5.0)
+        self.step()
+        self.assertGreater(self.count("temp_heater"), 1)
+        with mock.patch.object(w.computer, "undeploy", side_effect=RuntimeError("boom")) as undeploy_stub:
+            self.buyer.undeploy_and_sell(w.home, w.computer, w.services["shop"], "temp_heater", 0)
+        self.assertEqual(undeploy_stub.call_count, 1)
+
     def test_tail_packs_wait_for_research(self):
         self.pillars.update(o2=10.0, heat=12.0, pressure=1.2)
         self.step()

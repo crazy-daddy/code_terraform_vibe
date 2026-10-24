@@ -1,6 +1,6 @@
 # Helper sweep: candidate families (judged)
 
-Candidates for [helpers_sweep.md](done/helpers_sweep.md), merged 2026-10-23 from four harvest angles, judged the same day (Task 3: every site re-read; wrong lines corrected in place). No code was changed. Part 2, [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md), holds the small families, the `keep?` pairs, the harvest gaps and the families the judge found on its own; the `## Ranking` at the end of this file covers both parts.
+Candidates for [helpers_sweep.md](helpers_sweep.md), merged 2026-10-23 from four harvest angles, judged the same day (Task 3: every site re-read; wrong lines corrected in place). No code was changed. Part 2, [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md), holds the small families, the `keep?` pairs, the harvest gaps and the families the judge found on its own; the `## Ranking` at the end of this file covers both parts.
 
 Angles (the `Found by` letters):
 - **A** scan pairs: `devtools/code_scan/clone_scan.py --min-ratio 0.85 --min-lines 3 --top 0` (130 clusters, all triaged).
@@ -42,6 +42,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Tier-0 cleanup, not a bug: `s0/power/solar.py:29` binds `research` at import, but docs/components/research.md says the component is "Available from the beginning" and `get_component` returns None only for an id no entity has (docs/guide/builtins_and_commands.md:113), so the bind never misses (the `research_computer` gate at :247 is the Ship Computer building, a different thing). What remains: the id-variant loop at :98-106 probes non-public ids that research.md says read False (dead weight), and the import-time bind is style. Nit, low risk, S, no owner change (tier 0).
   - Risk: low. Size: M (12 sites, 2 helpers).
 - Landed: Phase 1 (helpers-impl-1), `refactor(components): one research unlock guard`.
+- Landed: Phase 3 (helpers-impl-3), nit only: `refactor(solar): is_tech_unlocked asks for the id given, research resolved per call` (e1c3f591). Tier 0, no helper; the id-variant loop and the import-time bind are gone.
 
 ## Depot walks (DEPOT_TYPE_TIERS: drone_station, drone_station_medium, drone_station_large)
 - Sites:
@@ -59,6 +60,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Not a bug: docs/models/outposts_and_power.md says `buildings()` lists deployed buildings and each ref carries `.position`; `get_component(ref.id)` reaches the live component. So "unresolved" and "no coords" depots do not occur in play; the three copies read the same set. The coords-less drop in `_scan_drone_buildings` is a defensive filter, acceptable for the fleet coordinators.
   - Apart: `logistics_requests.local_depots` needs the resolved `DroneStation` components of one outpost (hauler planning reads their ports); `commission_card.read_outposts` wants "has a depot" from one unfiltered `buildings()` call per outpost (membership test; three memoized type walks would cost more).
   - Risk: medium for `fleet_upgrade._advance_depot` (:312 runs right after a depot deploy; the 20-tick memo can still list the old depot: read `drone_depots.DISCOVERY_TTL_TICKS` and the swap flow before merging). Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(fleet): decommission depot walk reads discover_drone_depots` (9d81e3b1, fix rounds aa1f7c22, 9931c9ef). `fleet_upgrade._depots` stays apart whole, `_swap_drone` use included: `_advance_depot` reads right after a deploy and the walk memoizes 20 ticks (plan Decision), so one depot walk copy stays and no `type_id` row field was added. Decommission accepts the memo lag; its `_depot_ids` keeps the swallow guard around discovery.
 
 ## Network-wide machine walks (one or more types)
 - Sites:
@@ -110,6 +112,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Merge: `building_swap_upgrade._credits` -> `cash.balance()` (same int/0 contract; the module imports cash already). The `get_grid` pair stays (two controllers, no shared base, no `power` import in steam_turbine).
   - Apart pairs: `lib/biomass_mixer_gate.py::MixerGate._is_powered ~ lib/script_parking.py::ScriptParking._is_powered`, `lib/station_controller.py::StationController.is_station_powered ~ lib/script_parking.py::ScriptParking._is_powered` (fail open vs fail closed), `lib/oil_generator.py::OilGeneratorController.get_grid ~ lib/steam_turbine.py::SteamTurbineController.get_grid` (two controllers, no shared base), `lib/cash.py::balance ~ lib/components.py::machine_tier`, `lib/game_phase.py::read_tp ~ lib/weather_signals.py::WeatherController.now_gh`, `lib/drone_depot.py::DroneDepotController._is_life_form ~ lib/essence_liquifier.py::EssenceLiquifierController.sample_biome` (bool vs biome id).
   - Risk: low. Size: S (one site).
+- Landed: Phase 3 (helpers-impl-3), `refactor(building_swap_upgrade): _credits reads cash.balance` (1fd7b5c4). `_credits` stays a one-line method (subclasses call it). The apart pairs stay.
 
 ## Depth-6 BFS over the recipe graph
 - Sites:
@@ -126,6 +129,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Merge: `fleet_intent.ROOT_WALK_DEPTH` -> import `CASCADE_MAX_DEPTH` (fleet_intent already imports from `production`, which fronts production_cascade). One definition per constant.
   - Apart pairs: `lib/production_cascade.py::_cascade_fabricator_output_demand ~ lib/production_cascade.py::_walk_blueprint_demand`, `lib/production_cascade.py::compute_recipe_depths ~ lib/fleet_intent.py::_path_to`.
   - Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(fleet_intent): ROOT_WALK_DEPTH replaced by CASCADE_MAX_DEPTH` (9f0a1e98). `production` does not re-export it; fleet_intent imports it from `production_cascade`.
 
 ## Shop catalogue price read
 - Sites:
@@ -186,6 +190,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Merge the pair: `supply_dock.order_overrides` -> `production_docks.dock_order_prios` (supply_dock imports neither production_docks nor the reverse today; production_docks is a leaf of production_demand, no cycle).
   - Apart pairs: `lib/lead_cask.py::_live_inbound ~ lib/fluid_routing.py::_prune_conflicts` (TTLs and keys differ), `lib/logistics_snapshot.py::_units_in ~ lib/construction_plan.py::clean_priorities`.
   - Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(supply_dock): order_overrides reads dock_order_prios(PRIORITY_OVERRIDE_KEY)` (6c282b53). The two bodies read different keys (`ORDER_PRIO_KEY` vs `PRIORITY_OVERRIDE_KEY`), not identical as the spec said: `production_docks.dock_order_prios(key=ORDER_PRIO_KEY)` takes the key.
 
 ## Archive transaction updater coerces non-dict to empty
 - Sites:
@@ -262,6 +267,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Verdict: **merge**.
   - Owner `L/components.py`: `component(component_id, where="components.component")` (the label becomes an optional parameter; the TYPE_CHECKING alias at :116 keeps the typed signature). `building_swap_upgrade.component` goes; its 5 callers pass their label.
   - Apart: none. Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(components): component takes a where label, building_swap_upgrade.component dropped` (d2472246). The two-argument call keeps pyright ignores: the typed alias keeps per-name Literal returns.
 
 ## Guarded game-object method read with default
 - Sites:
@@ -372,6 +378,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - Owner `L/charging_stations.py`, existing `all_stations()`. `all_station_refs` = `[{"id": s["id"], "coords": s["coords"]} for s in all_stations()]` plus its self fallback. No cycle (charging imports station_controller, vehicle_energy; charging_stations imports geometry, components, construction_plan, game_clock). The memo TTL is fine: stations change rarely and the fallback covers the own station.
   - Also: `drone_depots._extract_coords` -> `construction_plan.coords_of` (one coords parser; drone_depots imports nothing from construction_plan yet, no cycle).
   - Apart: none. Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(charging): all_station_refs reads all_stations, drone_depots uses coords_of` (65c509d4). The own-station fallback stays; `coords_of` also accepts a dict.
 
 ## Per-outpost site lists (fab and lab sites)
 - Sites: `L/site_evict.py:148 fab_sites`, `:153 lab_sites`
@@ -383,8 +390,10 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
 - Found by: C
 - Verdict: **merge** one, **keep** one.
   - `water_sink._water_tanks` -> `[(t, fill_pct_of(t)) for t, oid in fluid_routing.discover_network_buildings(LIQUID_TANK_TYPE_IDS, fluid_id=WATER_FLUID_ID) if oid == own_id]` (same eligibility test, same resolve; water_sink imports fluid_routing already). The trace line per tank moves with it.
+  - Apart (implementation, Task 3.3): `water_sink._water_tanks` stays on its own-outpost walk. `discover_network_buildings` is not memoized, so the merge would turn a per-cycle one-outpost read into a per-cycle network walk (`poi_extractor_ids`, `get_tank_assignments`, every outpost's tanks), and one outpost's `buildings()` raising would drop the own outpost's tanks.
   - Apart: `wildlife_planner._tank_refs` runs inside `run_atomic` with a caller-supplied outpost list and retiring set; `discover_network_buildings` calls `poi_extractor_ids`, `get_tank_assignments` (archive) and `log.trace`, whose purity inside the runner is unverified.
   - Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(water_sink): _water_tanks reads fluid_routing.discover_network_buildings` (4b3341e9), reversed by `refactor(water_sink): _water_tanks back on its own-outpost walk, spec notes why` (06f6678c): `discover_network_buildings` is not memoized. Both tank sites end up apart.
 
 ## Network-wide ids and records (non-machine)
 - Sites: `L/weather_signals.py:97 discover_stations` ((station_id, biome, powered); no try at all), `L/wildlife_planner.py:578 network_habitats` (sorted ids + home from `is_home`)
@@ -394,6 +403,7 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - `network_habitats` -> `(production_core.discover_building_ids(type_id), components.home_outpost())` (same walk; `home_outpost()` is the Done-table owner of the `is_home` rule; wildlife_planner -> production_core -> outpost_mining -> storage: no cycle back). A 20-tick memo on habitat ids is harmless.
   - Apart: `discover_stations` (needs the snapshot `powered` flag and the outpost biome, which the id helper drops). Give it the `components.outposts()` guard: today `network.outposts()` or `buildings()` raising escapes to its caller.
   - Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(wildlife_planner): network_habitats reads discover_building_ids and home_outpost` (1c417955). The result is now deduped and memoized, with the home fallback when `outposts()` raises. `weather_signals.discover_stations` stays apart.
 
 ## Supply dock walk (per outpost)
 - Sites: `L/storage.py:716 _items_demanded_by_active_dock_orders` (walk :739-747)
@@ -432,12 +442,14 @@ Verdict block per family: `merge` (one helper replaces the copies), `keep` (same
   - fabricator and smelter: `archive.publish_status(WANTS_KEY, self.name, entry, now, self.log, stale_ticks=WANTS_STALE_TICKS)` when there is a want (it prunes stale and non-dict others with `is_fresh` and warns on a rejected write), `archive.pop_entry(WANTS_KEY, self.name)` when not. Both controllers share `RecipeClaimMixin`/`MachineController`, so the branch can live once there.
   - Apart: `fluid_routing` and `lead_cask` (their prune helpers are also readers elsewhere and carry their own TTL; two lines each on top of them).
   - Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(wants): fabricator and smelter publish wants through archive.publish_status and pop_entry` (6c95c9a0). The branch is inlined in each controller (the entry fields differ), not moved to a mixin. An empty want no longer prunes stale others; a pruned id gets a debug line and a rejected write a warning. `archive_cleaner.STATUS_TICK_KEYS` lists both wants keys. Apart as planned: fluid_routing, lead_cask.
 
 ## Sport-nav request flag
 - Sites: `L/pioneer_upgrade.py:68 is_sport_nav_requested`, `:88 request_sport_nav` (also `resume_vehicle`), `:101 clear_sport_nav_request`
 - Rule: per-vehicle flag in one archive dict. Shared helpers exist: `fleet_claims_common.is_flagged` (:29), `set_flagged` (:37).
 - Found by: A
 - Verdict: **merge**: the three keep their names and become `is_flagged(SPORT_NAV_REQUEST_KEY, name)`, `set_flagged(..., True)` + `resume_vehicle`, `set_flagged(..., False)` (pioneer_upgrade imports vehicle_claims, which imports fleet_claims_common; import it directly). Apart: none. Risk: low. Size: S.
+- Landed: Phase 3 (helpers-impl-3), `refactor(pioneer_upgrade): sport-nav flags use fleet_claims_common is_flagged and set_flagged` (58ee419e). The three names stay.
 
 ## Recall flag setter
 - Sites: `L/drone_claims.py:44 set_drone_recalled`, `L/vehicle_claims.py:113 set_vehicle_recalled`

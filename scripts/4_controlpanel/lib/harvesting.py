@@ -18,10 +18,6 @@ class HarvesterController(MachineController):
     POLL_S = 0.5
     ERROR_POLL_S = 5.0
 
-    ROWS = "ABCDEFGH"
-    NUM_ROWS = 8
-    NUM_COLS = 24
-
     if TYPE_CHECKING:
         # Supplied by HarvesterHeatMixin (lib/harvester_heat.py); this class never runs without it.
         def cool_down(self, target_level=None) -> None: ...
@@ -35,13 +31,8 @@ class HarvesterController(MachineController):
         self.name = getattr(harvester, "id", "harvester_1")
         self.base_sector = self.detect_base_sector()
         self.log = TreeConsole(module=self.LOG_MODULE)
-
-    @classmethod
-    def rc_to_sector(cls, r, c):
-        """Converts (row_idx, col_num) to sector string (e.g. 'E14')."""
-        if 0 <= r < cls.NUM_ROWS and 1 <= c <= cls.NUM_COLS:
-            return f"{cls.ROWS[r]}{c}"
-        return None
+        self._deploy_fail_ticks = {}  # {sector: tick of last failed machine deploy}, in memory only
+        self._plant_fail_ticks = {}  # {sector: tick of last failed plant attempt}, in memory only
 
     def detect_base_sector(self):
         """Determines the Harvester's depot pad / base sector (starts at depot)."""
@@ -87,10 +78,7 @@ class HarvesterController(MachineController):
                 return True
             elif res.status == "inventory_full":
                 self.log.level("warn").print(f"[{self.name}] WARNING: Base inventory full! Cannot store '{held}'.")
-                try:
-                    notify(f"[{self.name}] Base Inventory Full! Cannot store harvested items.", level="warn", duration_seconds=8.0)
-                except Exception as error:
-                    swallowed("harvesting.HarvesterController.store_held_if_any: notify", error)
+                notify(f"[{self.name}] Base Inventory Full! Cannot store harvested items.", level="warn", duration_seconds=8.0)
                 return False
             else:
                 self.log.level("warn").print(f"[{self.name}] Store notice: {res.status} - {res.message}")

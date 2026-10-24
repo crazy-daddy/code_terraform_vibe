@@ -57,7 +57,7 @@ from archive import STATUS_STALE_TICKS, archive
 from game_clock import TickCache, is_fresh
 from game_rules import LIQUID_TANK_TYPE_IDS
 from machine_controller import MachineController
-from parking_client import ParkRequester
+from parking_client import ParkRequester, is_shedded
 from storage import local_port_target
 from storage_take import take_item
 from storage_unload import eject_unneeded
@@ -262,7 +262,7 @@ class RefinerController(MachineController):
         return self._raw_ok is None or rid in self._raw_ok
 
     def shed(self):
-        return self.name in (archive.get("power.shedded", []) or [])
+        return is_shedded(self.name)
 
     # ----------------------------------------------------------- commands
 

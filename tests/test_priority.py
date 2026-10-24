@@ -67,6 +67,11 @@ class LadderBuildTests(unittest.TestCase):
         self.assertEqual(pr.ladder_level([], 100), 0)
         self.assertEqual(pr.ladder_total([]), 0)
 
+    def test_ladder_totals_maps_each_item_to_its_flat_total(self):
+        ladders = {"iron": [[400, 30], [100, 100]], "salt": [[100, 7]], "empty": []}
+        self.assertEqual(pr.ladder_totals(ladders), {"iron": 100, "salt": 7, "empty": 0})
+        self.assertEqual(pr.ladder_totals({}), {})
+
     def test_raise(self):
         lv = [[400, 30], [100, 100]]
         self.assertEqual(pr.ladder_raise(lv, 400, 20), [[400, 30], [100, 100]])

@@ -68,6 +68,7 @@ for _lib_dir in reversed(_LIB_DIRS):
 _install_builtins(World())
 import archive  # noqa: E402
 import bio_retire  # noqa: E402
+import drone_depots  # noqa: E402
 import fabricator  # noqa: E402
 import fleet_status  # noqa: E402
 import fluid_routing  # noqa: E402
@@ -112,6 +113,7 @@ def _reset_module_state(world):
     status_warning._ACTIVE.clear()  # one script run per test
     status_warning._SHOWN["status"] = None
     fleet_status._last_published.clear()  # else an identical publish in the next test is skipped
+    drone_depots._DISCOVERY.clear()
     storage._DISCOVERY.clear()
     storage._RETIRING.clear()
     storage._DISCOVERY.ttl_ticks = 0  # see production_core._DISCOVERY below

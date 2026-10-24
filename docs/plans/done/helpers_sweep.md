@@ -14,7 +14,7 @@
 - Read-only on `scripts/` and `autoplay/`: no edits, no scratch files there (CLAUDE.md §Boundaries).
 - Harvesters: `caveman:cavecrew-investigator`, default model (Haiku). Judge: `general-purpose` with `model: "fable"`. Reviews: `caveman:cavecrew-reviewer`, default model; the final review no higher than the session's main-loop model.
 - Families already done or planned are out of scope; every harvester brief lists them: everything in the "Done" table of code_quality.md, `_notify`, the `building_ops` deploy/undeploy/upgrade calls ([notify_building_ops.md](notify_building_ops.md)), every `clone_scan_ignore.txt` pair.
-- Harvest output: `docs/plans/helpers_sweep_candidates.md` (tracked, under 64 KB, `tests/test_docs_lint.py`). One `## <family>` section each: sites as `path:line qualname`, the shared rule in one line, how the copies differ, found-by angle.
+- Harvest output: `docs/plans/done/helpers_sweep_candidates.md` (tracked, under 64 KB, `tests/test_docs_lint.py`). One `## <family>` section each: sites as `path:line qualname`, the shared rule in one line, how the copies differ, found-by angle.
 - Every claimed site is read in the code by the agent that reports it; no site from scan output alone.
 
 ## Review Focus
@@ -47,7 +47,7 @@
 ### Task 2: Harvest
 
 **Files:**
-- Create: `docs/plans/helpers_sweep_candidates.md`
+- Create: `docs/plans/done/helpers_sweep_candidates.md`
 
 Dispatch the four harvesters in one message (parallel), each with the Global Constraints exclusions and output format, each returning its families as text; the controller merges them into the candidates file, joining the same family found by two angles.
 
@@ -61,7 +61,7 @@ Dispatch the four harvesters in one message (parallel), each with the Global Con
 ### Task 3: Fable judge
 
 **Files:**
-- Modify: `docs/plans/helpers_sweep_candidates.md` (a `Verdict:` block per family)
+- Modify: `docs/plans/done/helpers_sweep_candidates.md` (a `Verdict:` block per family)
 
 - [ ] **Step 1: Dispatch one `general-purpose` agent with `model: "fable"`.** Brief: read `helpers_sweep_candidates.md`, the "Done" table and "Drifted copies" of code_quality.md, and CODE_GUIDES.md; for each family read every site, then write under it: `Verdict: merge | keep | drift-bug`, owner module and helper signature (`name(params) -> return`), the rule the helper owns, sites that must stay apart and why, risk (`low | medium | high`), size (`S | M | L`). Then do a targeted read of `autoplay/lib` and `production_cascade.py` for logic-shaped duplicates the scans cannot see and add them as new families with verdicts. Return a ranking: drift-bugs first, then merges by sites saved over risk.
 - [ ] **Step 2: Spot-check** two `merge` and one `keep` verdict by reading their sites yourself. A wrong verdict goes back to the judge with the evidence, once.

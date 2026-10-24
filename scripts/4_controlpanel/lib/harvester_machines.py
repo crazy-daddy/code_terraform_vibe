@@ -183,18 +183,12 @@ class HarvesterMachinesMixin:
         h.log.end()
         return True
 
-    def _deploy_failures(self):
-        """{sector: tick of last failed deploy}, in memory only."""
-        if not hasattr(self, "_deploy_fail_ticks"):
-            self._deploy_fail_ticks = {}
-        return self._deploy_fail_ticks
-
     def deploy_targets(self, cells):
         """{sector: kind} of reserved cells ready for a machine whose kit is at home (full layout only)."""
         if self._host.layout_mode != "full":
             return {}
         now = now_tick()
-        failed = self._deploy_failures()
+        failed = self._host._deploy_fail_ticks
         out = {}
         for sector, kind in self.missing_machines(cells).items():
             if now - failed.get(sector, -DEPLOY_FAIL_COOLDOWN_TICKS) < DEPLOY_FAIL_COOLDOWN_TICKS:
@@ -218,7 +212,7 @@ class HarvesterMachinesMixin:
         deployed = self._host.step_machines() or {}
         reserved = h.reserved or {}
         now = now_tick()
-        failed = {} if ignore_cooldown else self._deploy_failures()
+        failed = {} if ignore_cooldown else self._host._deploy_fail_ticks
         strays = {s: k for s, k in deployed.items() if reserved.get(s) != k and now - failed.get(s, -DEPLOY_FAIL_COOLDOWN_TICKS) >= DEPLOY_FAIL_COOLDOWN_TICKS}
         if strays and not ignore_cooldown:
             ids = deployed_machine_ids() or {}
@@ -273,7 +267,7 @@ class HarvesterMachinesMixin:
         if held_out or held_in:
             h.log.debug(f"[{h.name}] Stray {kind} at {here} holds {held_out} output / {held_in} input again; removal waits.")
             self.ensure_running(machine_id)
-            self._deploy_failures()[here] = now_tick()
+            self._host._deploy_fail_ticks[here] = now_tick()
             h.log.end()
             return False
         run = get_component("run_control")
@@ -289,7 +283,7 @@ class HarvesterMachinesMixin:
             h.log.end()
             return True
         h.log.level("warn").print(f"[{h.name}] undeploy {kind} at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._deploy_failures()[here] = now_tick()
+        self._host._deploy_fail_ticks[here] = now_tick()
         h.log.end()
         return False
 
@@ -309,7 +303,7 @@ class HarvesterMachinesMixin:
             h.clear_here()
         h.store_held_if_any()
         if not h.stage(kit):
-            self._deploy_failures()[here] = now_tick()
+            self._host._deploy_fail_ticks[here] = now_tick()
             return False
         res = h.act("deploy", kit)
         status = getattr(res, "status", "?")
@@ -320,5 +314,5 @@ class HarvesterMachinesMixin:
             self._host.forget_machines()
             return True
         h.log.level("warn").print(f"[{h.name}] deploy('{kit}') at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._deploy_failures()[here] = now_tick()
+        self._host._deploy_fail_ticks[here] = now_tick()
         return False

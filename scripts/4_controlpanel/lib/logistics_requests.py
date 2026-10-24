@@ -478,30 +478,28 @@ def pickup_dest(vehicle_name):
     return found
 
 
-def in_flight(dest_outpost_id, curr_tick=None):
-    """{item_id: units} currently being hauled towards dest_outpost_id."""
-    tick = curr_tick if curr_tick is not None else now_tick()
+def _pickup_totals(keep, tick):
+    """{item_id: units} summed over the fresh PICKUPS entries that pass keep(entry)."""
     totals = {}
     for entry in archive.get_dict(PICKUPS_KEY).values():
-        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or not keep(entry):
             continue
         item_id = entry.get("item_id")
         if item_id:
             totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
     return totals
+
+
+def in_flight(dest_outpost_id, curr_tick=None):
+    """{item_id: units} currently being hauled towards dest_outpost_id."""
+    tick = curr_tick if curr_tick is not None else now_tick()
+    return _pickup_totals(lambda entry: entry.get("dest") == dest_outpost_id, tick)
 
 
 def aboard_units(curr_tick=None):
     """{item_id: units} loaded aboard a hauler and not delivered yet, any destination."""
     tick = curr_tick if curr_tick is not None else now_tick()
-    totals = {}
-    for entry in archive.get_dict(PICKUPS_KEY).values():
-        if not entry.get("aboard") or not is_fresh(entry, tick, PICKUP_STALE_TICKS):
-            continue
-        item_id = entry.get("item_id")
-        if item_id:
-            totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
-    return totals
+    return _pickup_totals(lambda entry: entry.get("aboard"), tick)
 
 
 def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
@@ -512,16 +510,7 @@ def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
     count against it.
     """
     tick = curr_tick if curr_tick is not None else now_tick()
-    totals = {}
-    for entry in archive.get_dict(PICKUPS_KEY).values():
-        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("source") != source_id:
-            continue
-        if exclude_vehicle is not None and entry.get("vehicle") == exclude_vehicle:
-            continue
-        item_id = entry.get("item_id")
-        if item_id:
-            totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
-    return totals
+    return _pickup_totals(lambda entry: entry.get("source") == source_id and (exclude_vehicle is None or entry.get("vehicle") != exclude_vehicle), tick)
 
 
 def _group_units(pickups, tick, field, exclude_vehicle=None):

@@ -44,6 +44,16 @@ class ParkRequesterTests(StubTestCase):
         self.assertNotIn("smelter_1", self.world.notebook.data[PARK_REQUESTS_KEY])
 
 
+class IsSheddedTests(StubTestCase):
+    def test_is_shedded_reads_the_power_guard_list(self):
+        self.assertFalse(parking_client.is_shedded("smelter_1"))
+        self.world.notebook.data[parking_client.SHEDDED_KEY] = ["smelter_1"]
+        self.assertTrue(parking_client.is_shedded("smelter_1"))
+        self.assertFalse(parking_client.is_shedded("smelter_2"))
+        self.world.notebook.data[parking_client.SHEDDED_KEY] = "smelter_1"  # malformed: not a list
+        self.assertFalse(parking_client.is_shedded("smelter_1"))
+
+
 class ScriptParkingTests(StubTestCase):
     def setUp(self):
         super().setUp()

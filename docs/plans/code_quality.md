@@ -64,6 +64,7 @@ so step 2 is needed.
 | `vehicle_claims.sonar_range()` + `item_tiers.MIN_SONAR_RANGE_M` | sonar range fallbacks 50 / 35 m spiral / 0 | this branch |
 | `fleet_decommission.forget_machine()` | decommission cleanup + drone chassis swap cleanup (`upgrade_state=False`) | this branch |
 | `notify()` called directly (2026-10-23) | 6 guarded `_notify` copies (`power`, `power_solar`, `reactor`, `oil_generator`, `script_parking`, `wildlife_planner`) | this branch |
+| `notify()` called directly, guards dropped (2026-10-24) | 10 guarded raw `notify()` sites (`bio` x2, `charging`, `drone_service`, `harvesting`, `seed_maker`, `thermal_cap`, `vehicle_cargo`, `vehicle_charging`, `vehicle_claims`). Not merged onto a helper: that would be the dropped `_notify` wrapper again. Level and duration args at the ten sites are not pinned by tests (unlike the `world.notice_args` pins of 6641a928). `notify()` only raises on bad arguments, so the guards hid our own bugs | this branch |
 | `building_ops.upgrade()`, `deploy_new()`, `undeploy()` (2026-10-23) | raw `computer.deploy()` / `undeploy()` / `upgrade()` in `early_buyer`, `fleet_decommission`, `fleet_upgrade`, `storage_expand`, `machine_pack_upgrade`, `pillar_swap`; `CALL_FAILED_STATUSES` for calls that could not ask | this branch |
 | `archive.get_dict()` (2026-10-24) | 20 def-level dict readers, 3 try-guarded readers, ~15 line-level `get(K, {})` + isinstance sites, 3 `autoplay` readers | helpers-impl-1 |
 | `vehicle_survey.spiral_next_index()` (2026-10-24) | 2 spiral readers that raised on a non-dict; `SURVEY_SPIRAL_KEY` defined twice | helpers-impl-1 |
@@ -79,24 +80,33 @@ so step 2 is needed.
 | `components.sensor_value()` (2026-10-24) | 3 sensor value reads | helpers-impl-2 |
 | `geometry.dist()` (2026-10-24) | 3 `_dist(ax, ay, bx, by)` copies, 13 call sites | helpers-impl-2 |
 | `game_clock.now_tick` callers (2026-10-24) | 4 `_tick` / `_now_tick` autoplay copies | helpers-impl-2 |
+| `drone_depots.discover_drone_depots()` in decommission (2026-10-24) | `fleet_decommission._depot_ids` own depot walk (`fleet_upgrade._depots` stays apart: `_advance_depot` reads right after a deploy and the walk memoizes 20 ticks; decommission accepts that lag) | helpers-impl-3 |
+| `item_tiers.best_tier()` (2026-10-24) | 4 top-down ladder walks (`drone_commission`, `drone_upgrade` x2, `pioneer_upgrade`) | helpers-impl-3 |
+| `logistics_requests._pickup_totals()` (2026-10-24) | `in_flight`, `aboard_units`, `reserved_from` ledger sums | helpers-impl-3 |
+| `parking_client.is_shedded()` / `SHEDDED_KEY` (2026-10-24) | 4 shed-list reads and the repeated `power.shedded` literal; `feed_maker.shed` and `refiner.shed` joined | helpers-impl-3 |
+| `priority.ladder_totals()` (2026-10-24) | `production_cascade.totals`, `production_orders.order_items` fold | helpers-impl-3 |
+| `field_layout.rc_to_sector()` and grid constants (2026-10-24) | harvesting classmethod copy and 3 repeated constants | helpers-impl-3 |
+| `geometry.ceil_int()` (2026-10-24) | `plant_terraformer_common.ceil_int`, `grid_geom._ceil_int` | helpers-impl-3 |
+| `RecipeClaimMixin.next_sleep` (2026-10-24) | identical Fabricator and Smelter `next_sleep` | helpers-impl-3 |
+| `drone_upgrade.category_ladder()` (2026-10-24) | `drone_commission._ladder`, `DroneUpgradeMixin._category_ladder` | helpers-impl-3 |
+| `wildlife_common.wildlife_complete()` in `feed_maker` (2026-10-24) | `feed_maker.complete` copy | helpers-impl-3 |
+| Harvester fail-tick dicts in `__init__` (2026-10-24) | 2 lazy `hasattr` getters | helpers-impl-3 |
+| `production_cascade._raise_target()` (2026-10-24) | 4 fabricator target folds sharing one trace | helpers-impl-3 |
+| `archive_cleaner._prune_fleet_dict()` (2026-10-24) | `clean_telemetry` and `clean_mining_reach` fleet prunes | helpers-impl-3 |
+| `components.building_type_counts()` (2026-10-24) | `commission_card` and `site_evict` type walks (`autoplay` `read_outposts` stays apart: a raised walk must skip the outpost) | helpers-impl-3 |
+| `components.component(id, where)` (2026-10-24) | `building_swap_upgrade.component` copy | helpers-impl-3 |
+| `cash.balance()` in `building_swap_upgrade._credits` (2026-10-24) | own balance read | helpers-impl-3 |
+| `charging_stations.all_stations()` in `charging.all_station_refs`, `construction_plan.coords_of` in `drone_depots` (2026-10-24) | own station walk, own coords parser | helpers-impl-3 |
+| `wildlife_planner.network_habitats` on `discover_building_ids` (2026-10-24) | own network habitat walk (`water_sink._water_tanks` stays apart: `discover_network_buildings` is not memoized) | helpers-impl-3 |
+| Sport-nav flags on `fleet_claims_common.is_flagged` / `set_flagged` (2026-10-24) | 3 `pioneer_upgrade` flag accessors | helpers-impl-3 |
+| `archive.publish_status` for fabricator and smelter wants (2026-10-24) | 2 prune-then-set updaters; `archive_cleaner.STATUS_TICK_KEYS` lists both keys | helpers-impl-3 |
+| `CASCADE_MAX_DEPTH` in `fleet_intent` (2026-10-24) | `ROOT_WALK_DEPTH` second definition | helpers-impl-3 |
+| `production_docks.dock_order_prios(key)` (2026-10-24) | `supply_dock.order_overrides` copy (the bodies read different keys, so the key is a parameter) | helpers-impl-3 |
+| `s0/power/solar.is_tech_unlocked` (2026-10-24) | id-variant loop and import-time research bind | helpers-impl-3 |
+| `CALL_FAILED_STATUSES` handling (2026-10-24) | `early_buyer` stops the pass after a call-failed undeploy; `fleet_decommission` leaves the script stopped on a call-failed undeploy (as the drone swap does) but restarts it on a refusal; `building_ops.TRANSIENT_STATUSES` spreads the one definition | helpers-impl-3 |
 
 ## Open candidates
-Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. Ranked `drift-bug` and `merge` families, best first (details and sites in the files; implementation plan: [helpers_sweep_impl.md](helpers_sweep_impl.md)):
-1. drift-bug: survey spiral readers raise on a non-dict, `SURVEY_SPIRAL_KEY` defined twice (S).
-2. drift-bug: `vehicle_claims.get_unsupported_targets` and `archive_cleaner._merge_unsupported` disagree on legacy pioneer keys (S).
-3. merge `archive.get_dict` (~25 sites; opens the spiral fix and the survey bypassers).
-4. merge a research unlock helper (12 sites; five sites let a raised lookup escape today, the helper swallows it).
-5. merge `components.outposts()` (~20 sites).
-6. merge `archive.mutate` / `pop_entries` (~30 updaters, risk medium; after 3, in small batches).
-7. merge `swallow.safe_call` (6 defs, ~30 call sites).
-8. merge `cash.shop_prices` / `shop_price` (8 sites).
-9. merge `components.building_ids_at` (6 sites).
-10. merge keyed-state wrappers and sub-entry lookups on `archive.mutate` / `dict_entry` (9 sites).
-11. merge `components.outpost_by_id` (3), `components_at` (2), `sensor_value` (3).
-12. merge `geometry.dist` (3 defs, 21 calls) and `game_clock.now_tick` (4 defs).
-13. merge depot walks on `discover_drone_depots` (2 sites, risk medium: memo lag in the swap flow).
-14. merge the small S families (`item_tiers.best_tier`, pickup ledger totals, `parking_client.is_shedded`, `priority.ladder_totals`, `field_layout.rc_to_sector`, lazy fail dicts, `_raise_target`, building type counts and more) and the remaining singles (ranks 14 and 15 of the candidates file).
-- Guarded raw `notify()` calls (`try: notify(...) except: swallowed`): `bio.py` (2), `charging.py`, `drone_service.py`, `harvesting.py`, `seed_maker.py`, `thermal_cap.py`, `vehicle_cargo.py`, `vehicle_charging.py`, `vehicle_claims.py` (all `scripts/4_controlpanel/lib`). `notify()` only raises on bad arguments, so the guards hide our own bugs; same rationale as the dropped wrappers.
+Both earlier candidates (`_notify` wrappers, `building_ops` raw calls) are in the Done table. The second sweep (2026-10-23) judged every family: sites, verdicts and the full ranking are in [helpers_sweep_candidates.md](done/helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](done/helpers_sweep_candidates_2.md) (small families, keep pairs, new families). `keep` pairs are in `clone_scan_ignore.txt`. All ranked families landed in Phases 1-3 (helpers-impl-1 to 3); the Done table lists them, [helpers_handoff.md](done/helpers_handoff.md) the leftovers.
 
 ## Drifted copies (sweep 2026-10-11)
 Copies that now disagree, so each is a bug as well as a duplicate. Found by three slice agents (storage/production,
@@ -169,7 +179,7 @@ Rod yield must end above the first shedding line.
   `TickCache`.
 
 ## Next sweep
-Ran 2026-10-23: four harvest angles (scan pairs now including `autoplay/` and short functions, game API anchors, bypassed discovery, known families refresh), merged and judged in [helpers_sweep_candidates.md](helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](helpers_sweep_candidates_2.md). Plan: [helpers_sweep.md](done/helpers_sweep.md). The families that earlier notes listed here (archive read/validate wrappers, per-outpost building filters, `research.is_unlocked`, `_dist`, the recipe BFS) are all judged there. Before another harvest, land the ranked families above and list them as done in the harvester briefs.
+Ran 2026-10-23: four harvest angles (scan pairs now including `autoplay/` and short functions, game API anchors, bypassed discovery, known families refresh), merged and judged in [helpers_sweep_candidates.md](done/helpers_sweep_candidates.md) and [helpers_sweep_candidates_2.md](done/helpers_sweep_candidates_2.md). Plan: [helpers_sweep.md](done/helpers_sweep.md). The families that earlier notes listed here (archive read/validate wrappers, per-outpost building filters, `research.is_unlocked`, `_dist`, the recipe BFS) are all judged there. Before another harvest, land the ranked families above and list them as done in the harvester briefs.
 
 Still unswept (the "Harvest gaps" of the candidates file):
 - `clone_scan` clusters c32 (~90 one-line accessors) and c72 were checked only for the listed families; stub bodies (`NotImplementedError`, default hooks) were skipped.

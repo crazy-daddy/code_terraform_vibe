@@ -59,6 +59,14 @@ def tier_rank(ladder, item_id):
     return ladder.index(item_id) if item_id in ladder else -1
 
 
+def best_tier(ladder, ok):
+    """Highest entry of ladder (worst -> best) that ok(item_id) accepts, None when none does."""
+    for item_id in reversed(ladder):
+        if ok(item_id):
+            return item_id
+    return None
+
+
 def best_mounted(slots, ladder):
     """Best item id from ladder among MountSlot-like `slots` (.module_id), None when none is mounted."""
     best = None

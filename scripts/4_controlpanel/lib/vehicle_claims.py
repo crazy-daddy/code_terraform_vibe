@@ -352,10 +352,7 @@ class VehicleClaimsMixin:
             swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: place_unsupported_marker", error)
         self.release_target_claim(target_key)
         self._host.log.print(f"[{self._host.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
-        try:
-            notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {short_name(scanner_tier)} T{hardness_limit})", level="info", duration_seconds=8.0)
-        except Exception as error:
-            swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: notify", error)
+        notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {short_name(scanner_tier)} T{hardness_limit})", level="info", duration_seconds=8.0)
 
     def _failing_module(self, reason):
         """The module ("sonar" or "drill") that reports a failure reason."""

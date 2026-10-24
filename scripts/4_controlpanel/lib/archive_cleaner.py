@@ -11,6 +11,7 @@ from fluid_routing import discover_network_buildings
 from game_clock import is_fresh, now_tick
 from item_tiers import DEPOT_TYPE_TIERS
 from outpost_mining import MINING_REACH_KEY
+from production_core import FABRICATOR_WANTS_KEY, SMELTER_WANTS_KEY
 from swallow import swallowed
 from tree_console import TreeConsole
 from unsupported_markers import LEGACY_PIONEER_SONAR_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, RESOURCE_MARKER_PREFIX, SURVEY_UNSUPPORTED_KEY, clear_resource_markers, key_tile, merge_unsupported
@@ -88,12 +89,14 @@ STATUS_TICK_KEYS = (
     "biomass_mixer.status",
     "drill.status",
     "essence_liquifier.status",
+    FABRICATOR_WANTS_KEY,
     "plant.automators",
     "plant.providers",
     "plant.status",
     "plant.terraformer",
     "refiner.status",
     "seed_maker.status",
+    SMELTER_WANTS_KEY,
     "waste_sink.status",
     "wildlife.feed",
     "wildlife.status",
@@ -279,6 +282,32 @@ class ArchiveCleaner:
 
                 self.archive.mutate(key, pop_still_stale)
         return len(stale)
+
+    def _prune_fleet_dict(self, key, active_vehicles, tag):
+        """
+        Drops entries of the fleet-keyed dict `key` whose vehicle is not in
+        `active_vehicles` (skipped when that set is empty, so a failed fleet
+        query never wipes the dict) or whose payload is empty/malformed. `tag`
+        is the log tag ("DELETE <WHAT>"). A non-dict key is reset. Returns the
+        count removed.
+        """
+        what = tag.split(" ", 1)[1].lower()
+        removed = 0
+        entries = self.archive.get(key, {})
+        if self._reset_if_not_dict(key, entries, tag):
+            removed += 1
+            entries = {}
+        stale = []
+        for name, val in entries.items():
+            if active_vehicles and name not in active_vehicles:
+                self.log(f"  [{tag}] {key}['{name}']: not in active fleet")
+                stale.append(name)
+            elif not isinstance(val, dict) or not val:
+                self.log(f"  [{tag}] {key}['{name}']: malformed or empty {what.split()[-1]} data")
+                stale.append(name)
+            else:
+                self.console.debug(f"  {what.capitalize()} '{name}' retained: active, payload well-formed")
+        return removed + self._prune_dict_key(key, stale)
 
     def _retire_legacy_key(self, key):
         """Deletes a legacy key whose content the caller has folded into its canonical key."""
@@ -590,23 +619,7 @@ class ArchiveCleaner:
                 if not self.dry_run:
                     self.archive.delete(k)
 
-        status = self.archive.get(FLEET_STATUS_KEY, {})
-        if self._reset_if_not_dict(FLEET_STATUS_KEY, status, "DELETE TELEMETRY"):
-            telemetry_removed += 1
-            status = {}
-
-        stale = []
-        for name, val in status.items():
-            if active_vehicles and name not in active_vehicles:
-                self.log(f"  [DELETE TELEMETRY] {FLEET_STATUS_KEY}['{name}']: not in active fleet")
-                stale.append(name)
-            elif not isinstance(val, dict) or not val:
-                self.log(f"  [DELETE TELEMETRY] {FLEET_STATUS_KEY}['{name}']: malformed or empty telemetry data")
-                stale.append(name)
-            else:
-                self.console.debug(f"  Telemetry '{name}' retained: active, payload well-formed")
-
-        telemetry_removed += self._prune_dict_key(FLEET_STATUS_KEY, stale)
+        telemetry_removed += self._prune_fleet_dict(FLEET_STATUS_KEY, active_vehicles, "DELETE TELEMETRY")
 
         self.stats["telemetry_removed"] += telemetry_removed
         return f"{telemetry_removed} obsolete telemetry entries purged"
@@ -617,25 +630,7 @@ class ArchiveCleaner:
         reach) of vehicles no longer in the fleet, or whose payload is empty/malformed.
         Pruning by existence is skipped when the fleet query came back empty.
         """
-        removed = 0
-
-        reach = self.archive.get(MINING_REACH_KEY, {})
-        if self._reset_if_not_dict(MINING_REACH_KEY, reach, "DELETE MINING REACH"):
-            removed += 1
-            reach = {}
-
-        stale = []
-        for name, val in reach.items():
-            if active_vehicles and name not in active_vehicles:
-                self.log(f"  [DELETE MINING REACH] {MINING_REACH_KEY}['{name}']: not in active fleet")
-                stale.append(name)
-            elif not isinstance(val, dict) or not val:
-                self.log(f"  [DELETE MINING REACH] {MINING_REACH_KEY}['{name}']: malformed or empty reach data")
-                stale.append(name)
-            else:
-                self.console.debug(f"  Mining reach '{name}' retained: active, payload well-formed")
-
-        removed += self._prune_dict_key(MINING_REACH_KEY, stale)
+        removed = self._prune_fleet_dict(MINING_REACH_KEY, active_vehicles, "DELETE MINING REACH")
 
         self.stats["mining_reach_removed"] += removed
         return f"{removed} stale mining reach entries purged"

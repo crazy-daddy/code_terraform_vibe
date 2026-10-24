@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING
 import logistics_requests
 from archive import STATUS_STALE_TICKS, archive
 from game_clock import is_fresh
-from plant_terraformer_common import FERTILIZER_ITEM_IDS, REQUESTER_ID, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
+from geometry import ceil_int
+from plant_terraformer_common import FERTILIZER_ITEM_IDS, REQUESTER_ID, STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, SUPPORT_REQUEST_BATCHES, remaining_forage
 from priority import NEED, STOCK
 from production import ORDER_STALE_TICKS, fabricator_unlocked_outputs, order_levels, set_order
 

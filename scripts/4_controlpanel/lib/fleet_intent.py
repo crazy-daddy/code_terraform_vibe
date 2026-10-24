@@ -21,13 +21,11 @@ import logistics_requests
 from game_rules import RAW_ORE_ITEM_IDS
 from outpost_mining import HOME_OUTPOST_ID
 from production import SourceCache, _all_dock_orders, _dock_order_remaining, _recipe_inputs_for, get_manual_orders, get_orders
+from production_cascade import CASCADE_MAX_DEPTH
 from swallow import swallowed
 from tree_console import TreeConsole
 
 log = TreeConsole(module="fleet_intent")
-
-# Same generous bound as production.py's demand cascades.
-ROOT_WALK_DEPTH = 6
 
 
 def _add(bucket, item_id, units):
@@ -112,7 +110,7 @@ def _path_to(seeds, item_id, cache: "SourceCache", shortfall_only):
     frontier = dict(seeds)
     parent = {i: None for i in seeds}
     seen = set()
-    for _depth in range(ROOT_WALK_DEPTH + 1):
+    for _depth in range(CASCADE_MAX_DEPTH + 1):
         if not frontier:
             return None
         next_frontier = {}

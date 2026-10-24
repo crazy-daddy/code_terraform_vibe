@@ -62,6 +62,7 @@ from game_clock import is_fresh, now_tick
 from game_rules import TICKS_PER_GAME_HOUR
 from parking_client import parked_ids, wake_for_visit, wake_kind
 from priority import NEED
+from production_core import discover_building_ids
 from storage import discover_storage_buildings, inventory_count, warehouse_stocks
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -577,19 +578,7 @@ def summary_line(plan):
 
 def network_habitats(type_id="habitat"):
     """(sorted ids of `type_id` buildings on the network, home OutpostRef or None)."""
-    ids = []
-    home = None
-    try:
-        for outpost in components.outposts():
-            if getattr(outpost, "is_home", False):
-                home = outpost
-            for ref in outpost.buildings(type_id):
-                ref_id = getattr(ref, "id", None)
-                if ref_id:
-                    ids.append(ref_id)
-    except Exception as error:
-        swallowed("wildlife_planner.network_habitats: outpost.buildings", error)
-    return sorted(ids), home
+    return sorted(discover_building_ids(type_id)), components.home_outpost()
 
 
 def _cataloged():

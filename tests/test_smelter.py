@@ -116,6 +116,21 @@ class HomeSmelterTests(StubTestCase):
         self.assertFalse(smelter.SmelterController(s).step())
 
 
+class NextSleepTests(StubTestCase):
+    def test_recipe_machines_poll_fast_when_active_and_tell_the_parker(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        controller = smelter.SmelterController(w.add_smelter("smelter_1", w.home))
+        controller.parker = mock.Mock()
+        mixin = recipe_claims.RecipeClaimMixin
+        for result, failed, active in ((True, False, True), (None, True, True), (None, False, False)):
+            controller.parker.reset_mock()
+            delay = controller.next_sleep(result, failed)
+            self.assertEqual(delay, mixin.ACTIVE_POLL_SECONDS if active else mixin.IDLE_POLL_SECONDS)
+            controller.parker.update.assert_called_once_with(not active)
+        self.assertLess(mixin.ACTIVE_POLL_SECONDS, mixin.IDLE_POLL_SECONDS)
+
+
 class PlanFeedTests(StubTestCase):
     def setUp(self):
         super().setUp()
@@ -229,6 +244,24 @@ class PlanFeedTests(StubTestCase):
         self.assertEqual(self.c._plan["made"], 6)
         self.assertEqual(self.c._plan["demands"]["iron_ingot"][0][1], 10)
         self.assertIn("demand_qty=4 ", self.debug_log())
+
+
+class PublishWantTests(StubTestCase):
+    def test_empty_want_pops_only_its_own_entry(self):
+        w = self.world
+        controller = smelter.SmelterController(w.add_smelter("smelter_1", w.home))
+        w.notebook.set(
+            smelter.SMELTER_WANTS_KEY,
+            {
+                "smelter_1": {"site": "home", "ore": "iron_ore", "fill_to": 5, "prio": 1, "tick": 1},
+                "other": {"tick": 0},
+            },
+        )
+        controller._want = None
+        controller._want_published = ("iron_ore", 5, 1)
+        controller.publish_want()
+        self.assertEqual(w.notebook.get(smelter.SMELTER_WANTS_KEY), {"other": {"tick": 0}})
+        self.assertIsNone(controller._want_published)
 
 
 class RemoteSmelterTests(StubTestCase):

@@ -637,6 +637,7 @@ def read_outposts(roles_map):
     out = []
     for ref in components.outposts():
         try:
+            # Own walk, not components.building_type_counts: a raise must skip the outpost ({} would read as empty).
             types = {}
             for building in ref.buildings() or []:
                 types[building.type_id] = types.get(building.type_id, 0) + 1

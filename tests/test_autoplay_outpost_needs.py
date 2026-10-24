@@ -1,6 +1,7 @@
 """Tests for autoplay/lib/outpost_needs.py (founding planner need model: now/soon/later needs, merge onto existing outposts)."""
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import autoplay_roles as roles
@@ -567,6 +568,24 @@ class RetiredRoleTests(unittest.TestCase):
         )
         self.assertEqual(roles.outpost_roles(), {"o1": ["drone_depot"], "o2": "factory", "o3": []})
         self.assertEqual(roles.drop_retired_roles({"done": {"biomass": True}}), {})
+
+
+class ReadOutpostsTests(unittest.TestCase):
+    @staticmethod
+    def ref(oid, buildings):
+        return SimpleNamespace(
+            id=oid, x=1, y=2, biome="forest", is_home=False, buildings=buildings, buildings_used=1, buildings_capacity=5
+        )
+
+    def test_raising_buildings_walk_drops_the_outpost(self):
+        def broken():
+            raise RuntimeError("buildings offline")
+
+        refs = [self.ref("o1", lambda: [SimpleNamespace(type_id="habitat")]), self.ref("o2", broken)]
+        with mock.patch.object(on.components, "outposts", return_value=refs):
+            found = on.read_outposts({})
+        self.assertEqual([o["id"] for o in found], ["o1"])
+        self.assertEqual(found[0]["types"], {"habitat": 1})
 
 
 class StationKeeperTests(unittest.TestCase):

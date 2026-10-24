@@ -74,6 +74,13 @@ class HelperTests(unittest.TestCase):
         self.assertIsNone(it.best_mounted(slots, it.DRILL_TIERS))
         self.assertIsNone(it.best_mounted(None, it.SONAR_TIERS))
 
+    def test_best_tier_walks_from_the_top_and_returns_none_when_nothing_passes(self):
+        ladder = ["a", "b", "c"]
+        self.assertEqual(it.best_tier(ladder, lambda item: item in ("a", "b")), "b")
+        self.assertEqual(it.best_tier(ladder, lambda item: True), "c")
+        self.assertIsNone(it.best_tier(ladder, lambda item: False))
+        self.assertIsNone(it.best_tier([], lambda item: True))
+
     def test_short_name(self):
         self.assertEqual(it.short_name("sonar_module"), "basic")
         self.assertEqual(it.short_name("sonar_module_deep"), "deep")

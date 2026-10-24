@@ -646,7 +646,7 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             self.uproot_current()
         if getattr(self.harvester.cell(here), "status", "") in PLANT_STATUSES:
             self.log.level("warn").print(f"[{self.name}] Crop at {here} not cleared; machine deploy there skipped for now.")
-            self._deploy_failures()[here] = now_tick()
+            self._deploy_fail_ticks[here] = now_tick()
             return False
         return True
 

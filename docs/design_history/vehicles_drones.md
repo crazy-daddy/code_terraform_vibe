@@ -227,3 +227,18 @@ Spec: `docs/plans/dynamic_roles/mission_pool.md`.
 - **Three places, one value.** A refit to `builder` ignores any `base`, a builder's script start sets the base
   (`_restore_constructor_base()`; a reload resets it to `HOME_BASE`, which may still be the old miner outpost),
   and the stock reads it. Fixing only the refit would leave the stock on the old `HOME_BASE`.
+
+## §2f-1 — Decommission Keeps Script Stopped on a Failed Call (2026-10-24)
+
+- **Two flows, one rule for a failed call.** Decommission restarted the script on every undeploy answer that was not
+  ok, while the drone swap left it stopped on a wait. A stop costs a vehicle its in-memory state and a restart begins
+  from the top, so restarting on a pass that learned nothing is churn.
+- **Call failed (`error` / `no_computer`).** The call never reached the game. The entry stays `ready`, the script
+  stays stopped and the next pass retries, as in the drone swap.
+- **Refused (`inventory_full`, `cargo_present`, ...).** Decommission keeps its restart and the `requested` state:
+  the script runs its prepare step again (a Pioneer sells more parts to free slots; a vehicle that took cargo
+  unloads), which the coordinator cannot do itself. The drone swap needs no script for a retry, so it stays stopped.
+- **`inventory_full` is a refusal.** It restarts like the other refusals because the Pioneer reruns its sell-parts prep to free
+  slots, unlike the drone swap. It does not count toward `MAX_UNDEPLOY_ATTEMPTS`.
+- **A failed call waits unbounded.** It never counts toward `MAX_UNDEPLOY_ATTEMPTS` (the `building_ops` rule), so a machine
+  whose undeploy call fails every pass stays stopped and recalled until the call works.

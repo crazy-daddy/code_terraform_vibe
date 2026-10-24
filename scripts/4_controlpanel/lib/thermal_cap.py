@@ -268,10 +268,7 @@ class ThermalCapController(MachineController):
 
         if hasattr(self.cap, "is_overpressured") and self.cap.is_overpressured():
             self.log.level("error").print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")
-            try:
-                notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
-            except Exception as error:
-                swallowed("thermal_cap.ThermalCapController.step: notify", error)
+            notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
         return self.next_poll_seconds(pressure)
 
     def park_wake_ticks(self):

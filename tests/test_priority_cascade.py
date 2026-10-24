@@ -166,6 +166,14 @@ class HaulRankTests(StubTestCase):
 
 
 class DockOverrideTests(StubTestCase):
+    def test_dock_order_prios_reads_the_given_key(self):
+        self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, {"o1": 850, "bad": "x"})
+        self.world.notebook.set(production_docks.ORDER_PRIO_KEY, {"o2": 300})
+        self.assertEqual(production_docks.dock_order_prios(supply_dock.PRIORITY_OVERRIDE_KEY), {"o1": 850})
+        self.assertEqual(production_docks.dock_order_prios(), {"o2": 300})
+        self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, "junk")
+        self.assertEqual(production_docks.dock_order_prios(supply_dock.PRIORITY_OVERRIDE_KEY), {})
+
     def test_override_wins_over_score(self):
         order = SimpleNamespace(id="o1")
         self.world.notebook.set(supply_dock.PRIORITY_OVERRIDE_KEY, {"o1": 850})
@@ -223,6 +231,27 @@ class SiteSupplyBandTests(StubTestCase):
     def test_operator_blueprint_is_manual_band(self):
         self.world.add_blueprint("bp_1", "liquid_pipe_bridge")
         self.assertEqual(priority.band(top_prio(self.builder_ladder())), priority.MANUAL)
+
+
+class TraceTargetTests(StubTestCase):
+    def test_trace_text_carries_source_and_detail(self):
+        targets = {"gear": [(priority.MANUAL, 5)]}
+        with mock.patch.object(production_cascade.log, "trace") as trace:
+            production_cascade._trace_target(targets, "gear", "dock order d1 (prio 3)", " (remaining=2, reserve=1)")
+        trace.assert_called_once_with(
+            f"get_fabricator_targets: dock order d1 (prio 3) raises target for gear -> {targets['gear']} (remaining=2, reserve=1)"
+        )
+
+
+class RaiseTargetTests(StubTestCase):
+    def test_max_folds_levels_and_traces_the_source(self):
+        targets = {"gear": [(priority.MANUAL, 5)]}
+        with mock.patch.object(production_cascade.log, "trace") as trace:
+            production_cascade._raise_target(targets, "gear", [(priority.MANUAL, 3), (priority.BUILD, 9)], "order book")
+        self.assertEqual(
+            targets["gear"], priority.ladder_max([(priority.MANUAL, 5)], [(priority.MANUAL, 3), (priority.BUILD, 9)])
+        )
+        trace.assert_called_once_with(f"get_fabricator_targets: order book raises target for gear -> {targets['gear']}")
 
 
 if __name__ == "__main__":

@@ -183,11 +183,7 @@ def storage_outposts(outposts):
     for outpost in outposts:
         if outpost_is_home(outpost):
             continue
-        try:
-            types = {getattr(b, "type_id", None) for b in outpost.buildings()}
-        except Exception as error:
-            swallowed("site_supply.storage_outposts: outpost.buildings", error)
-            continue
+        types = components.building_type_counts(outpost, "site_supply.storage_outposts: outpost.buildings").keys()
         if types & set(STORAGE_TYPE_IDS) and types & set(DEPOT_TYPE_TIERS) and not types & set(PENALIZED_TYPES):
             stores.append(outpost)
     return stores

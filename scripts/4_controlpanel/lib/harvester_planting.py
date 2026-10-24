@@ -279,7 +279,7 @@ class HarvesterPlantingMixin:
             self._host.note_action(f"uproot@{here}")
             return status
         self._host.log.level("warn").print(f"[{self._host.name}] uproot at {here} -> {status}: {getattr(res, 'message', '')}")
-        self._plant_failures()[here] = now_tick()
+        self._host._plant_fail_ticks[here] = now_tick()
         return status
 
     # ---------------------------------------------------------- seed demand
@@ -449,7 +449,7 @@ class HarvesterPlantingMixin:
         if not open_cells:
             return out
         curr_tick = now_tick()
-        failed = self._plant_failures()
+        failed = self._host._plant_fail_ticks
         for sector, species in open_cells:
             if curr_tick - failed.get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
                 continue
@@ -476,7 +476,7 @@ class HarvesterPlantingMixin:
             res = self._host.act("load_seed", seed_id)
             if res is None or res.status != "ok":
                 self._host.log.debug(f"[{self._host.name}] load_seed('{seed_id}') -> {getattr(res, 'status', '?')}")
-                self._plant_failures()[here] = now_tick()
+                self._host._plant_fail_ticks[here] = now_tick()
                 return False
         res = self._host.act("plant", seed_id)
         if res is not None and res.status == "ok":
@@ -489,19 +489,13 @@ class HarvesterPlantingMixin:
             self._host.note_action(f"plant {species}@{here}")
             return True
         self._host.log.level("warn").print(f"[{self._host.name}] plant('{seed_id}') at {here} -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}")
-        self._plant_failures()[here] = now_tick()
+        self._host._plant_fail_ticks[here] = now_tick()
         self._host.store_held_if_any()
         return False
 
-    def _plant_failures(self):
-        """{sector: tick of last failed plant attempt}, in memory only."""
-        if not hasattr(self, "_plant_fail_ticks"):
-            self._plant_fail_ticks = {}
-        return self._plant_fail_ticks
-
     def plant_cooling(self, sector, curr_tick):
         """True while `sector` is inside PLANT_FAIL_COOLDOWN_TICKS of a failed plant/uproot attempt."""
-        return curr_tick - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS
+        return curr_tick - self._host._plant_fail_ticks.get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS
 
     def harvest_here(self):
         """

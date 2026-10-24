@@ -21,8 +21,9 @@
 #      computer.undeploy()s it: the hardware goes to Inventory. Refused ->
 #      back to "requested" (script restarted); MAX_UNDEPLOY_ATTEMPTS refusals
 #      -> "blocked" and the recall is cleared. inventory_full is not counted
-#      as a refusal (retried until a slot frees up); neither are error /
-#      no_computer (the call never reached the game). not_found counts as
+#      as a refusal (retried until a slot frees up). error / no_computer
+#      (the call never reached the game) change nothing: the entry stays
+#      "ready", the script stays stopped, the next pass retries. not_found counts as
 #      done: the machine is already gone.
 #   3. undeployed -- a vehicle's snapshot is sold at the Shop (only the
 #      units the undeploy returned). Drone hardware stays in Inventory for
@@ -34,16 +35,15 @@
 # State: one dict, fleet.decommission = {machine_id: entry} (CODE_GUIDES.md#archive)
 #   entry = {"kind": "pioneer" | "rover" | "drone", "state": "requested" | "ready" | "blocked",
 #            "attempts": int, "reason": str}
-# Kept free of heavy imports: vehicle_recall.py/drone_claims.py import it
-# inside functions, and the cards import it at load. The cleanup imports its
-# modules inside forget_machine().
+# Module-level imports are limited to small shared helpers (archive, building_ops, drone_depots, ...);
+# vehicle_recall.py/drone_claims.py import this module inside functions, and the cards import it at
+# load. The cleanup imports its modules inside forget_machine().
 
-import components
 from archive import archive
 from building_ops import CALL_FAILED_STATUSES, classify, undeploy
 from components import component, start_script
 from drone_claims import set_drone_recalled
-from item_tiers import DEPOT_TYPE_TIERS
+from drone_depots import discover_drone_depots
 from parking_client import resume_vehicle
 from storage import inventory_count
 from swallow import swallowed
@@ -133,14 +133,11 @@ class FleetDecommissionCoordinator:
         return vehicles, drones
 
     def _depot_ids(self):
-        ids = set()
         try:
-            for outpost in components.outposts():
-                for type_id in DEPOT_TYPE_TIERS:
-                    ids.update(getattr(ref, "id", "") for ref in outpost.buildings(type_id))
+            return {d["id"] for d in discover_drone_depots()}
         except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: outpost.buildings", error)
-        return ids
+            swallowed("fleet_decommission.FleetDecommissionCoordinator._depot_ids: discover_drone_depots", error)
+            return set()
 
     def _cargo_count(self, machine_id):
         machine = component(machine_id)
@@ -231,7 +228,11 @@ class FleetDecommissionCoordinator:
         self._stop_script(machine_id)
         status = undeploy(machine_id, logger=self.log, warned=self.warned, computer=computer, tag="[decommission] ")
         if classify(status) not in ("ok", "gone"):
-            attempts = int(entry.get("attempts", 0)) + (0 if status in RETRY_STATUSES or status in CALL_FAILED_STATUSES else 1)
+            if status in CALL_FAILED_STATUSES:
+                # Nothing reached the game: stay "ready" with the script stopped (as the drone swap does) and retry next pass.
+                self.log.end(f"undeploy {status}, retrying")
+                return f"{machine_id} undeploy {status}"
+            attempts = int(entry.get("attempts", 0)) + (0 if status in RETRY_STATUSES else 1)
             start_script(machine_id)
             if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                 self._patch(machine_id, state="blocked", attempts=attempts, reason=status)

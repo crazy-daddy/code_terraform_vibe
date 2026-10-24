@@ -31,7 +31,7 @@ class DecommissionTestCase(StubTestCase):
         super().setUp()
         w = self.world
         w.add_pioneer("pioneer_1", slots=pioneer_slots())
-        w.add_drone_depot("depot_1", w.home)
+        w.add_drone_depot("depot_1", w.home).ref_position = [0.0, 0.0]
         w.add_drone("drone_1", w.home, station="depot_1", slots=[MountSlot(0, "battery", "battery_pack")])
         w.run_control.running.update({"pioneer_1", "drone_1"})
         self.computer = w.computer
@@ -135,8 +135,20 @@ class DecommissionTests(DecommissionTestCase):
         undeploy_stub.assert_called()
         entry = fleet_decommission.decommission_entry("pioneer_1")
         assert entry is not None
-        self.assertEqual(entry["state"], "requested", self.debug_log())
+        self.assertEqual(entry["state"], "ready", self.debug_log())
         self.assertEqual(entry.get("attempts", 0), 0)
+        self.assertNotIn("pioneer_1", self.world.run_control.running)
+
+    def test_depot_ids_cover_every_size_and_outpost(self):
+        w = self.world
+        far = w.add_outpost("outpost_2")
+        w.add_drone_depot("depot_2", far, "drone_station_large").ref_position = [5.0, 5.0]
+        w.add_drone_depot("depot_3", far, "drone_station_medium").ref_position = [6.0, 6.0]
+        self.assertEqual(self.coordinator._depot_ids(), {"depot_1", "depot_2", "depot_3"})
+
+    def test_depot_ids_empty_when_discovery_raises(self):
+        with mock.patch.object(fleet_decommission, "discover_drone_depots", side_effect=RuntimeError("boom")):
+            self.assertEqual(self.coordinator._depot_ids(), set())
 
     def test_fatal_refusal_blocks_after_max_attempts(self):
         self.computer.forced_status = "not_undeployable"

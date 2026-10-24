@@ -41,10 +41,6 @@ SMELTER_LOAD_CHUNK_SIZE = 10
 # no trigger fired (plan_due()).
 PLAN_BACKSTOP_TICKS = 1800
 
-# run() poll cadence: fast while the Smelter has work in flight (running, or
-# input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
-ACTIVE_POLL_SECONDS = 1.0
-IDLE_POLL_SECONDS = 2.0
 
 # A step has two paths. The plan path (_replan()) walks the demand cascade and
 # picks recipe and ore; it runs only when plan_due() says so (new shared demand
@@ -71,11 +67,6 @@ class SmelterController(RecipeClaimMixin, MachineController):
 
     def online_message(self):
         return f"Smelter Controller ({self.name}) online."
-
-    def next_sleep(self, result, failed):
-        active = failed or bool(result)
-        self.parker.update(not active)
-        return ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS
 
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
     CLAIM_OWNER_FIELD = "smelter"
@@ -328,17 +319,12 @@ class SmelterController(RecipeClaimMixin, MachineController):
             return
         site_id = claim_site_id(self.smelter)
 
-        def updater(stored):
-            stored = dict(stored) if isinstance(stored, dict) else {}
-            for smelter_id in [k for k, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
-                del stored[smelter_id]
-            if want:
-                stored[self.name] = {"site": site_id, "ore": want[0], "fill_to": want[1], "prio": want[2], "tick": now}
-            else:
-                stored.pop(self.name, None)
-            return stored
-
-        if archive.transaction(SMELTER_WANTS_KEY, {}, updater):
+        if want:
+            entry = {"site": site_id, "ore": want[0], "fill_to": want[1], "prio": want[2]}
+            written = archive.publish_status(SMELTER_WANTS_KEY, self.name, entry, now, self.log, stale_ticks=WANTS_STALE_TICKS)
+        else:
+            written = archive.pop_entry(SMELTER_WANTS_KEY, self.name)
+        if written:
             self._want_published = want
             self._want_tick = now
             self.log.debug(f"[{self.name}] depot feed want {want or 'nothing'}")

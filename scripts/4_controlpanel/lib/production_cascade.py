@@ -11,7 +11,7 @@ from components import component
 from construction_plan import DEFAULT_PRIORITY, PLANNED_KEY, PRIORITY_KEY, clean_priorities
 from game_clock import TickCache
 from logistics_requests import aboard_units, active_requests, request_keep
-from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total
+from priority import BLOCKER, BUILD, MANUAL, blueprint_prio, deficits_text, ladder_add, ladder_add_levels, ladder_deficits, ladder_level, ladder_lower, ladder_max, ladder_raise, ladder_total, ladder_totals
 from production_core import FUEL_ASSEMBLER_OUTPUTS, _all_outposts, _default_fabricator, _default_smelter, construction_site_id, home_outpost_id, log
 from production_demand_record import blueprint_entry, depths_entry, read_record
 from production_docks import _dock_order_remaining, _dock_order_sites, dock_order_prios, dock_order_site_shares, dock_owed_at, order_prio_of
@@ -48,16 +48,11 @@ def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
     return {r.output_item for r in recipes if getattr(r, "output_item", None)}
 
 
-def totals(ladders):
-    """{item_id: ladder_total} of {item_id: ladder}."""
-    return {item_id: ladder_total(levels) for item_id, levels in ladders.items()}
-
-
 def blueprint_demand_items(cache: "SourceCache | None" = None):
     """{item_id: gross demand} for every item any pending/paused Construction
     Blueprint needs, directly or via the recipe cascade
     (_cascade_blueprint_demand())."""
-    return totals(_cascade_blueprint_demand(cache))
+    return ladder_totals(_cascade_blueprint_demand(cache))
 
 
 def _stock_fn(cache: "SourceCache | None"):
@@ -364,7 +359,7 @@ def blueprint_required_ladders(cache: "SourceCache | None" = None):
 
 def blueprint_required_items(cache: "SourceCache | None" = None):
     """{item_id: units} of blueprint_required_ladders()."""
-    return totals(blueprint_required_ladders(cache))
+    return ladder_totals(blueprint_required_ladders(cache))
 
 
 def _cascade_blueprint_demand(cache: "SourceCache | None" = None):
@@ -587,7 +582,7 @@ def fabricator_target_ladders(cache: "SourceCache | None" = None):
 
 def get_fabricator_targets(cache: "SourceCache | None" = None):
     """{item_id: units} of fabricator_target_ladders(): the flat "keep at least N" targets."""
-    return totals(fabricator_target_ladders(cache))
+    return ladder_totals(fabricator_target_ladders(cache))
 
 
 @log.block()
@@ -633,6 +628,16 @@ def _consume_at(consumers, item_id, site_id, levels):
     site[site_id] = ladder_max(site.get(site_id, []), levels)
 
 
+def _trace_target(targets, item_id, source, detail=""):
+    log.trace(f"get_fabricator_targets: {source} raises target for {item_id} -> {targets[item_id]}{detail}")
+
+
+def _raise_target(targets, item_id, levels, source):
+    """max()-folds `levels` into targets[item_id] and traces which `source` raised it."""
+    targets[item_id] = ladder_max(targets.get(item_id, []), levels)
+    _trace_target(targets, item_id, source)
+
+
 def _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache: "SourceCache"):
     """
     Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
@@ -654,7 +659,7 @@ def _fold_manual_orders(targets, home_wants, fabricator_outputs, manual_cache: "
     for item_id, quantity in get_manual_orders().items():
         ladder_raise(targets.setdefault(item_id, []), MANUAL, manual_cache.network_stock(item_id) + manual_cache.staged_units(item_id) + quantity)
         ladder_raise(home_wants.setdefault(item_id, []), MANUAL, quantity)
-        log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
+        _trace_target(targets, item_id, "manual order")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
@@ -671,8 +676,7 @@ def _fold_order_book(targets, home_wants):
     Returns {site_id: {item_id: ladder}} of the sited requesters.
     """
     for item_id, levels in order_ladders().items():
-        targets[item_id] = ladder_max(targets.get(item_id, []), levels)
-        log.trace(f"get_fabricator_targets: order book raises target for {item_id} -> {targets[item_id]}")
+        _raise_target(targets, item_id, levels, "order book")
     sited = order_consumer_sites()
     for item_id, levels in order_ladders(skip=tuple(SITE_ORDER_REQUESTERS) + tuple(sited)).items():
         home_wants[item_id] = ladder_max(home_wants.get(item_id, []), levels)
@@ -710,7 +714,7 @@ def _fold_dock_orders(targets, fabricator_outputs, home_id, cache: "SourceCache 
                 continue
             kept = reserve.get(item_id, 0) if remaining > 0 else 0
             ladder_raise(targets.setdefault(item_id, []), prio, remaining + kept)
-            log.trace(f"get_fabricator_targets: dock order {order_id} (prio {prio}) raises target for {item_id} -> {targets[item_id]} (remaining={remaining}, reserve={kept})")
+            _trace_target(targets, item_id, f"dock order {order_id} (prio {prio})", f" (remaining={remaining}, reserve={kept})")
     return consumers
 
 
@@ -731,8 +735,7 @@ def _fold_blueprint_demand(targets, fabricator_outputs, cache: "SourceCache | No
     """
     for item_id, levels in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
-            targets[item_id] = ladder_max(targets.get(item_id, []), levels)
-            log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]}")
+            _raise_target(targets, item_id, levels, "blueprint cascade")
 
 
 def _fold_consumers(consumers, home_wants, site_wants, home_id, cache: "SourceCache | None"):

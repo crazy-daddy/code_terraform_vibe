@@ -27,10 +27,6 @@ from status_warning import StatusWarning
 # trigger fired (plan_due()).
 PLAN_BACKSTOP_TICKS = 1800
 
-# run() sleep between steps: short while the machine is running or moved
-# material this step, long when there is nothing to do.
-ACTIVE_POLL_SECONDS = 1.0
-IDLE_POLL_SECONDS = 2.0
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
@@ -84,11 +80,6 @@ class FabricatorController(RecipeClaimMixin, MachineController):
 
     def online_message(self):
         return f"Fabricator Controller ({self.name}) online."
-
-    def next_sleep(self, result, failed):
-        active = failed or bool(result)
-        self.parker.update(not active)
-        return ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS
 
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
     CLAIM_OWNER_FIELD = "fabricator"
@@ -710,17 +701,11 @@ class FabricatorController(RecipeClaimMixin, MachineController):
         wants = dict(self._wants)
         site_id = claim_site_id(self.machine)
 
-        def updater(stored):
-            stored = dict(stored) if isinstance(stored, dict) else {}
-            for fab_id in [f for f, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
-                del stored[fab_id]
-            if wants:
-                stored[self.name] = {"site": site_id, "wants": wants, "tick": now}
-            else:
-                stored.pop(self.name, None)
-            return stored
-
-        if archive.transaction(FABRICATOR_WANTS_KEY, {}, updater):
+        if wants:
+            written = archive.publish_status(FABRICATOR_WANTS_KEY, self.name, {"site": site_id, "wants": wants}, now, self.log, stale_ticks=WANTS_STALE_TICKS)
+        else:
+            written = archive.pop_entry(FABRICATOR_WANTS_KEY, self.name)
+        if written:
             self._wants_published = wants
             self._wants_tick = now
             self.log.debug(f"[{self.name}] wants {wants or 'nothing'}")

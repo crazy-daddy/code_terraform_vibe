@@ -177,10 +177,7 @@ class VehicleCargoMixin:
                 return moved, "ok"
             if status in ("target_full", "slots_full", "inventory_full"):
                 self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
-                try:
-                    notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
-                except Exception as error:
-                    swallowed("vehicle_cargo.VehicleCargoMixin._send_cargo: notify", error)
+                notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
                 return 0, "full"
             if status != "busy":
                 self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {status} - {message}")

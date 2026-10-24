@@ -323,8 +323,8 @@ class PowerGridManager:
         # A previous run may have left machines shed. Its in-memory set died
         # with the script, but it mirrored it to the archive -- adopt those so
         # the restore path releases them.
-        adopted = set(archive.get(f"power.shedded:{self.grid_anchor}", []) or []) if self.grid_anchor else set()
-        adopted |= set(archive.get("power.shedded", []) or [])
+        adopted = set(archive.get(f"{parking_client.SHEDDED_KEY}:{self.grid_anchor}", []) or []) if self.grid_anchor else set()
+        adopted |= set(archive.get(parking_client.SHEDDED_KEY, []) or [])
         self.adopted_machines = adopted
         if adopted:
             self.log.debug(f"[POWER] Adopting {len(adopted)} previously shed machine(s) for release check: {sorted(adopted)}.")
@@ -454,9 +454,9 @@ class PowerGridManager:
 
     def update_archive_shedded(self):
         shed_list = sorted(self.shedded_machines)
-        archive.set("power.shedded", shed_list)
+        archive.set(parking_client.SHEDDED_KEY, shed_list)
         if self.grid_anchor:
-            archive.set(f"power.shedded:{self.grid_anchor}", shed_list)
+            archive.set(f"{parking_client.SHEDDED_KEY}:{self.grid_anchor}", shed_list)
 
     def _shed(self, m_id, soft, reason, grid_id_str):
         if m_id in self.shedded_machines:

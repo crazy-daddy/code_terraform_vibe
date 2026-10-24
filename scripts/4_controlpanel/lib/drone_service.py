@@ -240,10 +240,7 @@ class DroneServiceController(StationController):
         reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({wh:.1f} {unit}, below {floor:.1f} {unit} return floor)"
         self.log.start(f"[{self.name}] Rescue {unit_ref.name}")
         self.log.level("warn").print(f"[{self.name}] Emergency! Drone {unit_ref.name} ({unit_ref.id}) in distress: {reason} at ({unit_ref.x:.1f}, {unit_ref.y:.1f}).")
-        try:
-            notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {unit_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
-        except Exception as error:
-            swallowed("drone_service.DroneServiceController._dispatch_rescue: notify", error)
+        notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {unit_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
 
         res = self.station.dispatch_rescue(unit_ref.id, target_level)
         if res.status == "ok":

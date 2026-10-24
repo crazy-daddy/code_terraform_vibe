@@ -206,10 +206,7 @@ class VehicleChargingMixin:
         if self._host.name not in active and self._host.name not in queued:
             st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
             self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
-            try:
-                notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
-            except Exception as error:
-                swallowed("vehicle_charging.VehicleChargingMixin._check_charge_dock: notify", error)
+            notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
 
     @method_block(lambda self, *_, **__: f"[{self._host.name}] drive_with_recharge")
     def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5, min_throttle=None):

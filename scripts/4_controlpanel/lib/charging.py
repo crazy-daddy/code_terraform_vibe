@@ -1,8 +1,8 @@
 # Shared Library for Vehicle Charging Station & Fleet Rescue Management
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
-import components
 import geometry
+from charging_stations import all_stations
 from station_controller import StationController
 from swallow import swallowed
 from vehicle_energy import rescue_wh_per_meter_for
@@ -36,16 +36,9 @@ class ChargingStationController(StationController):
         refs = []
 
         try:
-            for outpost in components.outposts():
-                for building in outpost.buildings("charging_station"):
-                    pos = getattr(building, "position", None)
-                    b_id = getattr(building, "id", None)
-                    if b_id and pos and len(pos) >= 2:
-                        coord = (float(pos[0]), float(pos[1]))
-                        if not any(r["id"] == b_id for r in refs):
-                            refs.append({"id": b_id, "coords": coord})
+            refs = [{"id": s["id"], "coords": s["coords"]} for s in all_stations()]
         except Exception as error:
-            swallowed("charging.ChargingStationController.all_station_refs: outpost.buildings", error)
+            swallowed("charging.ChargingStationController.all_station_refs: all_stations", error)
 
         if not any(r["id"] == self.name for r in refs):
             station_outpost = getattr(self.station, "outpost", None)
@@ -158,10 +151,7 @@ class ChargingStationController(StationController):
         self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
         self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({unit_ref.x:.1f}, {unit_ref.y:.1f}).")
 
-        try:
-            notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
-        except Exception as error:
-            swallowed("charging.ChargingStationController._dispatch_rescue: notify", error)
+        notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
 
         self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
         res = self.station.dispatch_rescue(v_id, target_level)

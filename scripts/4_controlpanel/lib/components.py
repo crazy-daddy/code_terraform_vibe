@@ -105,11 +105,11 @@ def weather_station(component_id) -> "WeatherStation | None":
     return get_component(component_id)  # type: ignore[return-value]
 
 
-def _component(component_id):
+def _component(component_id, where="components.component"):
     try:
         return get_component(component_id)
     except Exception as error:
-        swallowed("components.component: get_component", error)
+        swallowed(f"{where}: get_component", error)
         return None
 
 
@@ -167,6 +167,20 @@ def building_ids_at(outpost, type_id, where="components.building_ids_at: outpost
     except Exception as error:
         swallowed(where, error)
         return []
+
+
+def building_type_counts(outpost, where="components.building_type_counts: outpost.buildings") -> "dict[str, int]":
+    """{type_id: count} over one unfiltered outpost.buildings() walk. {} for a raised walk
+    (swallowed under `where`)."""
+    counts: dict[str, int] = {}
+    try:
+        for building in outpost.buildings() or []:
+            type_id = getattr(building, "type_id", "")
+            counts[type_id] = counts.get(type_id, 0) + 1
+    except Exception as error:
+        swallowed(where, error)
+        return {}
+    return counts
 
 
 def components_at(outpost, type_id, where="components.components_at: outpost.buildings") -> list:

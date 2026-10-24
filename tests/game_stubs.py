@@ -159,7 +159,7 @@ def _counts_as_building(type_id):
 
 
 class BuildingRef:
-    """outpost.buildings() entry: .id / .name / .type_id / .outpost."""
+    """outpost.buildings() entry: .id / .name / .type_id / .outpost / .position."""
 
     def __init__(self, component):
         self.id = component.id
@@ -167,6 +167,7 @@ class BuildingRef:
         self.type_id = component.type_id
         self.outpost = component.outpost
         self.powered = True
+        self.position = getattr(component, "ref_position", None)  # a test sets ref_position where it needs coords
 
 
 class OutpostRef:
@@ -2486,6 +2487,8 @@ class Computer:
 class DroneDepot(Building):
     """Drone Depot (drone_station*): bays from the spec; docked drones are the
     Drone components whose `station` is this depot."""
+
+    ref_position: list[float] | None = None  # a test sets it where it needs coords (read via getattr)
 
     def __init__(self, world, depot_id, outpost, type_id="drone_station"):
         super().__init__(world, depot_id, outpost)

@@ -47,11 +47,6 @@ def plants_km2():
     return sensor_value("plants_sensor", "plant_terraformer_common.plants_km2: get_component")
 
 
-def ceil_int(value):
-    whole = int(value)
-    return whole + 1 if value > whole else whole
-
-
 def remaining_forage(phase, remaining_km2, from_phase=1):
     """Forage still to convert from phase `from_phase` on: the rest of the current band plus every later band."""
     total = 0.0

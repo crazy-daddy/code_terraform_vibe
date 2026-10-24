@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from game_rules import BIOMES
-from parking_client import PARKED_KEY
+from parking_client import PARKED_KEY, SHEDDED_KEY
 from swallow import safe_call, swallowed
 from tree_console import TreeConsole, method_block
 
@@ -82,7 +82,6 @@ REWIRE_HOLD_TICKS = 1200
 
 STATE_KEY_PREFIX = "biomass_mixer.gate."
 KNOWN_LIQUIFIERS_KEY = "biomass_mixer.gate_known_liquifiers"
-SHEDDED_KEY = "power.shedded"
 
 # script.parked mode of a gate pause: script parking leaves the Mixer dark and never counts it as stray.
 PARK_MODE = "mixer_gate"

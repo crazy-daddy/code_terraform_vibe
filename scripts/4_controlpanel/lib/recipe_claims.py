@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from archive import archive
 from game_clock import is_fresh
+from parking_client import ParkRequester, is_shedded
 from production import claim_site_id, site_recipe_claims
 from swallow import swallowed
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
         name: str
         log: TreeConsole
         _claim_ticks: dict
+        parker: ParkRequester
 
         def get_current_tick(self) -> int: ...
 
@@ -50,6 +52,16 @@ class RecipeClaimMixin:
 
     RECIPE_CLAIMS_KEY = ""
     CLAIM_OWNER_FIELD = ""
+
+    # run() poll cadence: fast while the machine has work in flight (running, buffers
+    # non-empty, or a recipe/item was just set/loaded), slow when idle.
+    ACTIVE_POLL_SECONDS = 1.0
+    IDLE_POLL_SECONDS = 2.0
+
+    def next_sleep(self, result, failed):
+        active = failed or bool(result)
+        self._host.parker.update(not active)
+        return self.ACTIVE_POLL_SECONDS if active else self.IDLE_POLL_SECONDS
 
     @property
     def _host(self) -> "_ClaimHost":
@@ -149,5 +161,4 @@ class RecipeClaimMixin:
         never powered off, since they only draw power while crafting; not starting
         or topping up production saves the same power without a wake call to undo.
         """
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self._host.name in shedded
+        return is_shedded(self._host.name)

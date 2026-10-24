@@ -26,7 +26,6 @@ def need(component):
 
 clock = need(get_component("clock"))
 home = need(get_component("outpost_home"))
-research = get_component("research")
 shop = need(get_component("shop"))
 nocturna = get_component("nocturna")
 inventory = get_component("inventory")
@@ -93,16 +92,14 @@ def get_master_solar_id():
 
 
 def is_tech_unlocked(tech_id):
+    research = get_component("research")
     if not research:
         return False
-    variants = [tech_id, tech_id.replace("research_", "") + "_unlock", "research_" + tech_id.replace("_unlock", ""), tech_id.replace("research_", "")]
-    for v in variants:
-        try:
-            if research.is_unlocked(v):
-                return True
-        except Exception as error:
-            _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
-    return False
+    try:
+        return bool(research.is_unlocked(tech_id))
+    except Exception as error:
+        _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
+        return False
 
 
 def get_building_ids(type_id):
@@ -222,10 +219,7 @@ while True:
             # research.md's is_unlocked() example) - the catalog's internal "Tech id" field
             # ("feeder_unlock") is a different namespace read from save-state unlockedTech
             # lists (see devtools/scripts_sync.py's read_save_state), not what is_unlocked()
-            # accepts. Passing "feeder_unlock" here made is_tech_unlocked()'s variant-guessing
-            # (strip/append research_/_unlock) permanently return False, since it can never
-            # derive "research_auto_feeders" from "feeder_unlock" - the two don't share a
-            # stem - which kept every Bio-Loop building powered off even past 1.0 ppt O2.
+            # accepts.
             if "bio_" in b.id and (o2 < 1.0 or not is_tech_unlocked("research_auto_feeders")):
                 continue
             try:

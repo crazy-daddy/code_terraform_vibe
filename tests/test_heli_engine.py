@@ -9,12 +9,23 @@ import drone_energy
 import drone_upgrade
 from game_stubs import MountSlot, Result
 from harness import StubTestCase
+from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, OIL_TANK_TIERS
 
 HELI_PARTS = {"drone_large", "heli_thruster", "oil_tank_small", "cargo_pod_medium"}
 
 
 def no_stock(_item_id):
     return 0
+
+
+class CategoryLadderTests(unittest.TestCase):
+    def test_ladder_by_category_and_engine(self):
+        self.assertEqual(drone_upgrade.category_ladder("energy", "hauler", "heli"), OIL_TANK_TIERS)
+        self.assertEqual(drone_upgrade.category_ladder("energy", "hauler", "electric"), BATTERY_TIERS)
+        self.assertEqual(drone_upgrade.category_ladder("cargo", "hauler", "electric"), CARGO_POD_TIERS)
+        self.assertEqual(drone_upgrade.category_ladder("role", "miner", "electric"), ["portable_bio_extractor"])
+        self.assertEqual(drone_upgrade.category_ladder("role", "hauler", "electric"), [])
+        self.assertEqual(drone_upgrade.category_ladder("other", "hauler", "electric"), [])
 
 
 class HeliSpecTests(unittest.TestCase):

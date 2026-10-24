@@ -17,6 +17,8 @@ from tree_console import TreeConsole
 # Same module name as the engine: one log level setting covers both halves.
 log = TreeConsole(module="script_parking")
 
+# [machine_id]: machines the Power Guard (lib/power.py) has shed; written by power.update_archive_shedded().
+SHEDDED_KEY = "power.shedded"
 # {machine_id: {"kind": str, "tick": n}}: written by the machine scripts (ParkRequester).
 PARK_REQUESTS_KEY = "script.park_requests"
 # {machine_id: {"kind": str, "mode": "breaker" | "stopped", "since": n}}: owned by ScriptParking.
@@ -44,6 +46,12 @@ OIL_SURPLUS_WAKE_FRACTION = 0.90
 OIL_WAKE_RESERVE_FRACTION = 0.40
 # run_control outcomes that leave the script in the asked state (start/resume: running, pause: paused).
 RUN_OK = ("ok", "already_running", "already_paused")
+
+
+def is_shedded(machine_id):
+    """True when the Power Guard lists machine_id in SHEDDED_KEY."""
+    shedded = archive.get(SHEDDED_KEY, [])
+    return isinstance(shedded, list) and machine_id in shedded
 
 
 def parked_ids(kind=None, mode="breaker"):

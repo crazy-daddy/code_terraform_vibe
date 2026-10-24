@@ -57,7 +57,7 @@ MAX_ATTEMPTS = 5
 # undeploy() answers that only mean "not right now"; also the building swaps'
 # (building_swap_upgrade). inventory_full = no Inventory room for the returned kit;
 # error / no_computer = building_ops.undeploy() could not ask (the call raised, no computer).
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "error", "no_computer")
+TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", *CALL_FAILED_STATUSES)
 # upgrade() answers the upgrade step waits out.
 UPGRADE_WAIT_STATUSES = ("under_construction", "not_enough_power", "inventory_full")
 

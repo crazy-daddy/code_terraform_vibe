@@ -24,8 +24,8 @@
 #        modules = thruster first, then fit_slot_plan(role, kind, ...) in slot order
 #        buy = parts of the spec bought at the Shop (not craftable, not held)
 
-from drone_upgrade import FIT_LOADOUTS, ROLE_MODULE_ITEMS, THRUSTER_BY_ENGINE, fit_slot_plan
-from item_tiers import BATTERY_TIERS, CARGO_POD_TIERS, DRONE_CHASSIS_TIERS, OIL_TANK_TIERS
+from drone_upgrade import FIT_LOADOUTS, THRUSTER_BY_ENGINE, category_ladder, fit_slot_plan
+from item_tiers import DRONE_CHASSIS_TIERS, best_tier
 
 # Roles the card offers: the ones with a FIT_LOADOUTS entry (the scout is
 # one-off: commissioned, never upgraded).
@@ -35,24 +35,6 @@ COMMISSION_ENGINE = "electric"
 # Order-book requester id for commissioned drone kits
 # (production.STANDING_ORDER_REQUESTERS keeps fleet_upgrade from pruning it).
 COMMISSION_REQUESTER = "fleet_commission"
-
-
-def _ladder(category, role, engine=COMMISSION_ENGINE):
-    if category == "energy":
-        return OIL_TANK_TIERS if engine == "heli" else BATTERY_TIERS
-    if category == "cargo":
-        return CARGO_POD_TIERS
-    if category == "role":
-        item = ROLE_MODULE_ITEMS.get(role)
-        return [item] if item else []
-    return []
-
-
-def _best(ladder, obtainable):
-    for item_id in reversed(ladder):
-        if obtainable(item_id):
-            return item_id
-    return None
 
 
 def build_drone_spec(role, unlocked, inventory_count, buyable=(), engine=COMMISSION_ENGINE):
@@ -69,16 +51,16 @@ def build_drone_spec(role, unlocked, inventory_count, buyable=(), engine=COMMISS
     def obtainable(item_id):
         return item_id in unlocked or inventory_count(item_id) > 0 or item_id in buyable
 
-    kind = _best([k for k in DRONE_CHASSIS_TIERS if k in loadouts], obtainable)
+    kind = best_tier([k for k in DRONE_CHASSIS_TIERS if k in loadouts], obtainable)
     if kind is None:
         return None, "no drone chassis craftable"
     thruster = THRUSTER_BY_ENGINE[engine]
     if not obtainable(thruster):
         return None, f"{thruster} not obtainable"
     modules = [thruster]
-    energy_item = _best(_ladder("energy", role, engine), obtainable)
+    energy_item = best_tier(category_ladder("energy", role, engine), obtainable)
     for category in fit_slot_plan(role, kind, energy_item, engine):
-        item = _best(_ladder(category, role, engine), obtainable)
+        item = best_tier(category_ladder(category, role, engine), obtainable)
         if item is None:
             return None, f"{category} module not obtainable"
         modules.append(item)
