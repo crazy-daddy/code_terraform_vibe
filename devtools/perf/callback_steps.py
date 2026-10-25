@@ -26,8 +26,14 @@ callback's end: the throwing line when it hit the cap, else the last line
 run (the lambda's line in lib/atomic.py for run_atomic()). Its lib can lag:
 an archive transaction updater's lines keep the caller's lib (`archive`), so
 read the line in the updater's lib or the libs it calls. Some of the
-worker's checks throw at exactly 10,000, so a peak of 10,000 is a crash. Only callbacks the window
-reaches are measured; --hours sets it (0.4 h on save 0839 takes ~10 min).
+worker's checks throw over 10,000, some at 10,000, so a peak of exactly
+10,000 may be a crash or a normal return: it counts as a step-limit end
+(conservative); the run's console.log shows a real crash as "exceeded step
+limit". A callback that suspends (a flush) and is retried is counted once
+per attempt, each with its own `before`, so its count and own steps can
+overstate it, and a crash on the game's own-steps total across attempts can
+show without a step-limit end. Only callbacks the window reaches are
+measured; --hours sets it (0.4 h on save 0839 takes ~10 min).
 
 The report also says what each --watch callback peaks at, or that the window
 never reached it (default: fair_rival_bands, the drone plan's no-snapshot
@@ -118,7 +124,7 @@ def report(slots, threshold, top, per_slot):
     for name, recs in ranked[:top] if top else ranked:
         for i, rec in enumerate(recs[:per_slot] if per_slot else recs):
             flag = "  OVER" if rec["peak"] > threshold * rec["cap"] else ""
-            limit = f"  step limit x{rec['limit']}" if rec.get("limit") else ""
+            limit = f"  step limit (may be a crash) x{rec['limit']}" if rec.get("limit") else ""
             at = f"{rec.get('peakSource') or '?'}:{rec.get('peakLine') or '?'}"
             lines.append(
                 f"{name if i == 0 else '':<24} {rec['peak']:>6} {100 * rec['peak'] / rec['cap']:>5.1f}% "
@@ -157,7 +163,12 @@ def main(argv=None):
         out = args.out or tempfile.mkdtemp(prefix="callback_steps-")
         os.makedirs(out, exist_ok=True)
         path = import_steps.run(
-            args.save, out, args.hours, RECORDS, ["--callback-steps"], "the pure callback pattern (PURE_CALLBACK_FN"
+            args.save,
+            out,
+            args.hours,
+            RECORDS,
+            ["--callback-steps"],
+            'the pure callback pattern ("callback step records are off"',
         )
     with open(path, encoding="utf-8") as f:
         records = json.load(f)

@@ -135,6 +135,16 @@ test("a slice counter at exactly the cap counts as a step-limit end (the >= chec
   assert.deepEqual([r.peak, r.limit], [10000, 1]);
 });
 
+test("own steps never go negative (a counter reset inside an attempt)", () => {
+  const s = shim();
+  s.on(true);
+  const ev = evaluator();
+  ev.steps = 500;
+  s.call(ev, { name: "f", sourceId: "x" }, () => { ev.steps = 20; });
+  const [r] = s.records.values();
+  assert.deepEqual([r.ownSum, r.ownMax, r.peak], [0, 0, 20]);
+});
+
 test("own steps over the cap count as a step-limit end", () => {
   const s = shim();
   s.on(true);

@@ -108,8 +108,11 @@ function __ctImportStep(ev, fn, readySignal) {
 // `before` and the location at its end (the throwing line on a step-limit
 // end; the lib can lag: a callback a native runs, such as an archive
 // transaction updater, keeps its caller's source id), the largest own steps,
-// and step-limit ends (after at the cap, as the `>=` checks throw, or own
-// over it). Off until setCallbackSteps(true) (run.mjs --callback-steps).
+// and step-limit ends (after at the cap, which only the `>=` checks throw at,
+// or own over it). A callback that suspends (cB, e.g. a flush) is retried by
+// the worker's loop with its own steps summed across attempts; here each
+// attempt is one run with its own `before` (own clamped at 0), so a crash on
+// that sum can show without a step-limit end. Off until setCallbackSteps(true) (run.mjs --callback-steps).
 // Exported for test/callback_steps.test.mjs.
 export const CALLBACK_STEP_SHIM = String.raw`
 const __ctCallbackSteps = new Map();
@@ -135,7 +138,7 @@ function __ctCallbackFrame(ev, frame) {
 function __ctCallbackEnd(ev, cb) {
   ev.__ctCb = null;
   ev.__ctCbWant = -1;
-  const after = ev.steps, cap = ev.stepsLimit * 10, own = after - cb.before;
+  const after = ev.steps, cap = ev.stepsLimit * 10, own = Math.max(0, after - cb.before);
   const v = cb.fn?.type === "bound_method" ? cb.fn.func : cb.fn, f = cb.own, g = cb.inner;
   const fn = (f ? f.fnQualname ?? f.fnName : null) ?? v?.qualname ?? v?.name ?? null;
   const source = (f ? f.sourceId : null) ?? v?.sourceId ?? null;
