@@ -5,7 +5,7 @@ from unittest import mock
 import machine_pack_upgrade as mpu
 from archive import archive
 from drone_upgrade import update_fleet_upgrade
-from game_stubs import FABRICATOR_RECIPES, OilPump, Recipe
+from game_stubs import FABRICATOR_RECIPES, OilPump, Recipe, Result
 from harness import StubTestCase
 from parking_client import PARKED_KEY
 from production import ORDERS_KEY
@@ -79,3 +79,14 @@ class MachinePackUpgradeTests(StubTestCase):
         self.upgrader.step(10)
         upgrades = [j for j in bp.pending if j.kind == "upgrade"]
         self.assertEqual([j.required_item for j in upgrades], ["oil_pump_upgrade_pack_mk2"])
+
+    def test_refused_oil_pump_plan_wakes_no_builder(self):
+        self.fab._recipes.append(PUMP_RECIPE)
+        self.world.add_extractor("oil_pump_1", "oil_pump", cls=OilPump)
+        bp = self.world.services["construction_blueprint"]
+        self.world.add_pioneer("pioneer_1")
+        self.world.run_control.states["pioneer_1"] = "paused"
+        archive.set(PARKED_KEY, {"pioneer_1": {"kind": "pioneer", "mode": "paused", "since": 0, "role": "builder"}})
+        with mock.patch.object(bp, "plan_upgrade", return_value=Result("not_enough_items", blueprint_ids=[])):
+            self.upgrader.step(0)
+        self.assertIn("pioneer_1", archive.get(PARKED_KEY, {}))

@@ -1,23 +1,26 @@
 import unittest
+from unittest import mock
 
 import drone_claims
 import drone_upgrade
 import fleet_decommission
 import fleet_upgrade
 import harness
+import logistics_requests
 import parking_client
 import pioneer_upgrade
+import power as grid_power
 import retired_machines
 import script_parking
 import vehicle_claims
 from game_stubs import Building, Result
-from harness import StubTestCase, logistics_requests
+from harness import StubTestCase
 from parking_client import PARK_REQUESTS_KEY, PARKED_KEY, ParkRequester
 from script_parking import WAKE_AFTER_TICKS, ScriptParking
 
 
 class _FakePower:
-    """Stands in for lib/power.py's reserve helpers."""
+    """Stands in for lib/power.py's grid measure; the low-reserve verdict is the real one."""
 
     def __init__(self, fraction):
         self.fraction = fraction
@@ -25,11 +28,8 @@ class _FakePower:
     def measure_grid(self, grid, tank_ids=None):
         return {"bat_wh": self.fraction * 100, "bat_cap": 100, "steam_t": 0, "steam_cap": 0}
 
-    def reserve_fraction(self, now):
-        return self.fraction
-
     def reserve_is_low(self, now):
-        return self.fraction < parking_client.OIL_WAKE_RESERVE_FRACTION
+        return grid_power.reserve_is_low(now)
 
 
 class ParkRequesterTests(StubTestCase):
@@ -344,8 +344,10 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.parking.next_due, self.world.clock.now + WAKE_AFTER_TICKS["smelter"])
         reads = self.world.notebook.reads
-        self.parking.step(self.grids, 10.0, full=False)
+        with mock.patch.object(script_parking.log, "start") as start:
+            self.parking.step(self.grids, 10.0, full=False)
         self.assertEqual(self.world.notebook.reads, reads)  # returned before PARKED_KEY, so before log.start() too
+        start.assert_not_called()  # no debug block
 
     def test_fast_pass_with_nothing_parked_reads_nothing(self):
         self.parking.step(self.grids, 10.0)
@@ -640,6 +642,28 @@ class VehicleParkingTests(StubTestCase):
         self.assertEqual(self.parked(), {})
         self.assertFalse(parking_client.resume_vehicle("drone_1", "test"))  # already running
 
+    def test_wake_role_and_resume_vehicle_skip_a_breaker_entry(self):
+        entry = {"kind": "drone", "mode": "breaker", "since": 0, "role": "hauler"}
+        self.world.notebook.data[PARKED_KEY] = {"drone_1": dict(entry)}
+        self.assertEqual(parking_client.wake_role("hauler", "test"), [])
+        self.assertFalse(parking_client.resume_vehicle("drone_1", "test"))
+        self.assertEqual(self.parked(), {"drone_1": entry})
+
+    def test_held_key_wakes_nothing_and_a_rewritten_stale_key_does(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        now = self.world.clock.now
+        logistics_requests.set_requests("outpost_1", "fab", {"iron_ore": (harness.request(10), 0)}, now)
+        self.parking.step(self.grids, 10.0)  # records the new work, so the pause below is not refused
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        self.assertIn("drone_1", self.parked())
+        logistics_requests.set_requests("outpost_1", "smelter", {"iron_ore": (harness.request(10), 0)}, now)
+        self.assertIn("drone_1", self.parked())  # a second requester on a held key: no new work
+        late = now + logistics_requests.REQUEST_STALE_TICKS + 1
+        logistics_requests.set_requests("outpost_1", "smelter", {"iron_ore": (harness.request(10), 0)}, late)
+        self.assertNotIn("drone_1", self.parked())  # the stale key was invisible to haulers: new work
+
     def test_idle_vehicle_is_paused_and_resumed_when_due(self):
         self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
@@ -883,6 +907,10 @@ class FieldProviderParkingTests(StubTestCase):
             parking_client.wake_kind("field_provider", "test", within={"sprinkler_1", "smelter_1"}), ["sprinkler_1"]
         )
         self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"grow_lamp_1", "smelter_1"})
+        self.assertEqual(
+            parking_client.wake_kind("field_provider", "test", within=set()), []
+        )  # empty = none, None = all
+        self.assertIn("grow_lamp_1", self.world.notebook.data[PARKED_KEY])
 
     def test_wake_kind_clears_only_requests_filed_before_parking(self):
         for type_id in ("grow_lamp", "sprinkler"):

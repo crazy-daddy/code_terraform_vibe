@@ -3,7 +3,8 @@
 import unittest
 
 import harness
-from harness import StubTestCase, logistics_requests
+import logistics_requests
+from harness import StubTestCase
 
 R = harness.request
 
