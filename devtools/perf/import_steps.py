@@ -118,16 +118,18 @@ def report(peaks, threshold, top):
     return lines
 
 
-def run(save, out, hours):
+def run(save, out, hours, records=RECORDS, extra=(), pattern="the module body pattern (MODULE_BODY"):
+    """Runs run.mjs --save SAVE --include-autoplay [extra] into OUT/run; returns OUT/run/<records>.
+    `pattern` names the simhost.mjs patch whose warning explains a missing file."""
     run_dir = os.path.join(out, "run")
-    command = ["node", RUN_MJS, "--save", save, "--include-autoplay", "--hours", hours, "--out", run_dir]
+    command = ["node", RUN_MJS, "--save", save, "--include-autoplay", "--hours", hours, *extra, "--out", run_dir]
     with open(os.path.join(out, "run.stdout"), "w", encoding="utf-8") as stdout:
         subprocess.run(command, check=True, stdout=stdout, stderr=subprocess.STDOUT, cwd=REPO_ROOT)
-    path = os.path.join(run_dir, RECORDS)
+    path = os.path.join(run_dir, records)
     if not os.path.exists(path):
         sys.exit(
-            f"import_steps: {path} missing: the simworker build lacks the module body pattern "
-            f"(simhost.mjs MODULE_BODY warning in {out}/run.stdout)"
+            f"{os.path.splitext(records)[0]}: {path} missing: the simworker build lacks {pattern} "
+            f"warning in {out}/run.stdout)"
         )
     return path
 

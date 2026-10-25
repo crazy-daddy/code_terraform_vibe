@@ -39,8 +39,11 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   step fills its `LOGISTICS_SLICE_TICKS` budget by design; a 6-outpost round costs ~165 ticks, spread over
   `outpost_tier_deficits` (~55 %) and `outpost_tier_free` (~45 %); the archive write costs 1 tick. No record
   trim: every `free` band has a reader. A smaller slice would cut step peaks but age the record further.
-- Real-save peak steps per callback are unmeasured (plan, "Tool gaps"); `step_profile.py haul` peaks at ~2,224
-  steps (22 % of the cap) on synthetic input.
+- Real-save peak steps per callback: measured 2026-10-25 with `devtools/perf/callback_steps.py` (plan, Results,
+  "Callback step margin"). Open: seed_maker_1 and seed_maker_3 crash on 0839 (StepLimitError at 10,001 / 10,000)
+  in the `logistics_requests.set_requests` archive transaction updater; seed_maker_4 reaches 80 %. The updater
+  prunes across the whole requests record (`_prune_requests`), so its cost grows with all outposts' requests. `fair_rival_bands` peaks at
+  3,459 (34.6 %).
 
 ## Recommended order
 
