@@ -36,6 +36,13 @@ ATOMIC_ENABLED = False makes run_atomic() call fn directly, for the case that
 a game update closes the quirk.
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Callable, TypeVar
+
+    T = TypeVar("T")
+
 ATOMIC_ENABLED = True
 
 # Nesting depth of active run_atomic() calls, and console writes held back meanwhile: (console, text, kwargs).
@@ -67,7 +74,7 @@ def _write_deferred():
         console.print(text, **kwargs)
 
 
-def run_atomic(fn, *args):
+def run_atomic(fn: "Callable[..., T]", *args) -> "T":
     """fn(*args) as a single map() callback; returns its result. Console writes made through
     console_print() inside it are written after it (see the module doc)."""
     if not ATOMIC_ENABLED:
