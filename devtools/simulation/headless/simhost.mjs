@@ -94,6 +94,71 @@ function __ctImportStep(ev, fn, readySignal) {
   }
 }`;
 
+// Callback steps (patchCallbackSteps()): a pure callback (the function a
+// builtin such as map() or sorted(key=) calls, so every run_atomic() slice)
+// runs with no tick boundary inside it. Each statement checks the step counter
+// of the whole slice against stepsLimit*10, so a run's `after` is what the cap
+// is checked on and `before` is the steps the script already spent that
+// slice; the callback's own steps (after - before) are checked against the
+// same cap at its end. __ctPureCall() records the outermost run per evaluator
+// (a callback inside one counts in it). One aggregate per script slot,
+// callback function and its first callee (`inner`: for a run_atomic() lambda,
+// the fn it runs), named from the debug call frames pushed one and two levels
+// below the start. Kept: count, sum of own steps, the peak `after` with its
+// `before` and the location at its end (the throwing line on a step-limit
+// end; the lib can lag: a callback a native runs, such as an archive
+// transaction updater, keeps its caller's source id), the largest own steps,
+// and step-limit ends (after at the cap, as the `>=` checks throw, or own
+// over it). Off until setCallbackSteps(true) (run.mjs --callback-steps).
+// Exported for test/callback_steps.test.mjs.
+export const CALLBACK_STEP_SHIM = String.raw`
+const __ctCallbackSteps = new Map();
+let __ctCallbackOn = false;
+function __ctPureCall(ev, fn, run) {
+  if (!__ctCallbackOn || ev.__ctCb) return run();
+  const base = ev.callFrameStack?.length ?? -2;
+  const cb = { fn, base, before: ev.steps, own: null, inner: null };
+  ev.__ctCb = cb;
+  ev.__ctCbWant = base;
+  try { return run(); } finally { __ctCallbackEnd(ev, cb); }
+}
+function __ctCallbackFrame(ev, frame) {
+  const cb = ev.__ctCb;
+  if (ev.__ctCbWant === cb.base) {
+    cb.own = frame;
+    ev.__ctCbWant = cb.base + 1;
+  } else {
+    cb.inner = frame;
+    ev.__ctCbWant = -1;
+  }
+}
+function __ctCallbackEnd(ev, cb) {
+  ev.__ctCb = null;
+  ev.__ctCbWant = -1;
+  const after = ev.steps, cap = ev.stepsLimit * 10, own = after - cb.before;
+  const v = cb.fn?.type === "bound_method" ? cb.fn.func : cb.fn, f = cb.own, g = cb.inner;
+  const fn = (f ? f.fnQualname ?? f.fnName : null) ?? v?.qualname ?? v?.name ?? null;
+  const source = (f ? f.sourceId : null) ?? v?.sourceId ?? null;
+  const inner = g ? (g.fnQualname ?? g.fnName ?? null) : null, innerSource = g ? (g.sourceId ?? null) : null;
+  const key = ev.ownSourceName + "\u0000" + fn + "\u0000" + source + "\u0000" + inner + "\u0000" + innerSource;
+  let r = __ctCallbackSteps.get(key);
+  if (!r) {
+    r = { script: ev.ownSourceName, fn, source, inner, innerSource, cap, count: 0, ownSum: 0, ownMax: 0,
+      peak: -1, peakBefore: 0, peakSource: null, peakLine: null, limit: 0 };
+    __ctCallbackSteps.set(key, r);
+  }
+  r.count++;
+  r.ownSum += own;
+  if (own > r.ownMax) r.ownMax = own;
+  if (after >= cap || own > cap) r.limit++;
+  if (after > r.peak) {
+    r.peak = after;
+    r.peakBefore = cb.before;
+    r.peakSource = ev.currentSourceId ?? null;
+    r.peakLine = ev.currentLine ?? null;
+  }
+}`;
+
 function shimSource(N) {
   return String.raw`
 const __ctSystemMs = new Map();
@@ -108,6 +173,7 @@ function __ctStickyFluid(id, caps, fluids) {
   return __ctLastFluids.get(id) ?? [caps, fluids];
 }
 ${IMPORT_STEP_SHIM}
+${CALLBACK_STEP_SHIM}
 function __ctTimedSystem(name, fn) {
   if (__ctSkipSystems.has(name)) return;
   const t0 = performance.now();
@@ -160,6 +226,8 @@ function __ctCreateHeadless(opts = {}) {
     setStickyFluids: v => { __ctStickyFluids = !!v; },
     setFreeDebug: v => { __ctFreeDebug = !!v; },
     importSteps: __ctImportSteps,
+    callbackSteps: __ctCallbackSteps,
+    setCallbackSteps: v => { __ctCallbackOn = !!v; },
     machineRevision: ${N.machineRevision ? `id => ${N.machineRevision}(core.state, id)` : "null"},
     config: ${N.config},
   };
@@ -258,6 +326,40 @@ export function patchImportSteps(src) {
   return { src: src.slice(0, found[0].index) + patched + src.slice(end), readySignal: ready ?? null };
 }
 
+// Callback steps: the evaluator's runResumablePureCallback() runs a builtin's
+// callback as `<s> = this.withPureCallback(() => this.evalPreparedCall(...))`,
+// then adds its steps to the callback's own count and throws the
+// StepLimitError over stepsLimit*10. (executeUserFunctionSync(), the other
+// sync path, runs only hooks and dunders, no map() callback, on build
+// 7e5e168.) That call goes through __ctPureCall(), outside the per-statement
+// check, so a step costs nothing. pushDebugCallFrame() names the callback and
+// its first callee; without that patch the records keep `inner: null` and the
+// function value's name.
+const PURE_CALLBACK_FN = /\n {2}\*runResumablePureCallback\(([\w$]+), [^\n]*\) \{\n/g;
+const PURE_CALLBACK_RUN = /([\w$]+) = (this\.withPureCallback\(\(\) => this\.evalPreparedCall\([\w$]+, ([\w$]+), [^;\n]*\)\));/;
+const PURE_CALLBACK_CAP = /if \([\w$]+ > [\w$]+\) \{\s*throw new/;
+const PUSH_FRAME = /\n {2}pushDebugCallFrame\(([\w$]+)\) \{\n/g;
+
+export function patchCallbackSteps(src) {
+  const fns = [...src.matchAll(PURE_CALLBACK_FN)];
+  if (fns.length !== 1) return { src, why: `runResumablePureCallback found ${fns.length}x (want 1)` };
+  const at = fns[0].index + fns[0][0].length;
+  const close = src.indexOf("\n  }\n", at);
+  if (close < 0) return { src, why: "runResumablePureCallback end not found" };
+  let body = src.slice(at, close);
+  const run = PURE_CALLBACK_RUN.exec(body);
+  if (!run || run[3] !== fns[0][1]) return { src, why: "pure callback call not found in runResumablePureCallback" };
+  if (!PURE_CALLBACK_CAP.test(body.slice(run.index))) return { src, why: "step-limit check not found after the pure callback call" };
+  body = body.slice(0, run.index) + `${run[1]} = __ctPureCall(this, ${run[3]}, () => ${run[2]});` + body.slice(run.index + run[0].length);
+  let out = src.slice(0, at) + body + src.slice(close);
+  const pushes = [...out.matchAll(PUSH_FRAME)];
+  if (pushes.length !== 1) return { src: out, inner: false };
+  const p = pushes[0];
+  const end = p.index + p[0].length;
+  out = out.slice(0, end) + `    if (this.__ctCbWant === this.callFrameStack.length) __ctCallbackFrame(this, ${p[1]});\n` + out.slice(end);
+  return { src: out, inner: true };
+}
+
 function patchSignature(src) {
   // Other systems push similar `m:` lines; keep the one whose last fields are
   // the caps / io / fluids / levels / content variables declared just above.
@@ -289,7 +391,7 @@ const SLOW_STEP_MS = 1000;
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false, instantBuild: false, importSteps: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false, worldGen: false, gameVersion: false, scale: false, instantBuild: false, importSteps: false, callbackSteps: false };
   const step = (label, fn) => {
     const t0 = performance.now();
     const out = fn();
@@ -359,6 +461,14 @@ export function patchSimworker(src) {
     src = importSteps.src;
     features.importSteps = true;
     if (!importSteps.readySignal) warnings.push("module return class not found after the module body run: a top-level return in a lib records as an error");
+  }
+  const callbackSteps = step("PURE_CALLBACK_FN", () => patchCallbackSteps(src));
+  if (callbackSteps.why) {
+    warnings.push(`${callbackSteps.why}: callback step records are off`);
+  } else {
+    src = callbackSteps.src;
+    features.callbackSteps = true;
+    if (!callbackSteps.inner) warnings.push("pushDebugCallFrame not found: callback step records have no first callee (inner)");
   }
   // Stand-in `scale` (anchors.mjs SCALE_PATTERNS): all five sites or none.
   const scale = step("SCALE_PATTERNS", () => patchScale(src));
@@ -552,7 +662,8 @@ export class Sim {
   // opts.stickyFluids: see patchSignature(); opts.paidDebug: debug lines pause
   // the script as in game (see patchFreeDebug()); opts.logLevels: entries merged over
   // DEFAULT_LOG_LEVELS into the console.log_levels archive dict (null keeps the save's);
-  // opts.keepVersionGuard: keep the save's confirmed build (GOOD_VERSION_KEY).
+  // opts.keepVersionGuard: keep the save's confirmed build (GOOD_VERSION_KEY);
+  // opts.callbackSteps: record sync callback steps (see patchCallbackSteps()).
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
@@ -569,6 +680,8 @@ export class Sim {
     sim.h.setStickyFluids(opts.stickyFluids);
     if (!opts.paidDebug && !sim.features.freeDebug) console.warn("[headless] free debug lines unavailable on this simworker build; debug lines pause scripts as in game.");
     sim.h.setFreeDebug(!opts.paidDebug);
+    if (opts.callbackSteps && !sim.features.callbackSteps) console.warn("[headless] --callback-steps requested but unavailable on this simworker build; no callback_steps.json.");
+    sim.h.setCallbackSteps(!!opts.callbackSteps);
     return sim;
   }
 
@@ -730,6 +843,9 @@ export class Sim {
 
   // Player module body runs so far, oldest first (see patchImportSteps()).
   importSteps() { return [...this.h.importSteps]; }
+
+  // Outermost sync callback aggregates, highest peak first (see patchCallbackSteps()).
+  callbackSteps() { return [...this.h.callbackSteps.values()].sort((x, y) => y.peak - x.peak); }
 
   #ok(r, what) {
     if (!r.ok) throw new Error(`${what} failed: ${r.error ?? JSON.stringify(r)}`);

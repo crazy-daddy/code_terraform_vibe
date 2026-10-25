@@ -42,6 +42,8 @@
 // --sticky-fluids        empty tanks keep their last fluid type for the network cache
 //                        (stops rebuilds when a tank runs dry every tick; optional
 //                        since build e1986ce, saves ~1 ms/tick)
+// --callback-steps       with --out: also write callback_steps.json (peak steps of each
+//                        outermost sync callback per slot, devtools/perf/callback_steps.py)
 // --park                 park passive machines' scripts (passive.mjs); wake on triggers
 // --set ID.KEY=VALUE     set machines[ID].data[KEY] after load (repeatable), e.g. to
 //                        buffer a reservoir that forces fluid-network rebuilds
@@ -121,6 +123,7 @@ const { values: a } = parseArgs({
     "only-scripts": { type: "string" }, stock: { type: "string", multiple: true }, drain: { type: "string", multiple: true },
     scenario: { type: "string" }, standin: { type: "string", multiple: true }, "script-set": { type: "string" },
     "include-autoplay": { type: "boolean" }, "strip-autoplay": { type: "boolean" }, "auto-approve": { type: "string" },
+    "callback-steps": { type: "boolean" },
   },
 });
 if (a["include-autoplay"] && a["strip-autoplay"]) throw new Error("--include-autoplay and --strip-autoplay exclude each other");
@@ -179,6 +182,7 @@ const sim = await Sim.create({
   logLevels: parseLogLevels(a["log-levels"]),
   paidDebug: a["paid-debug"],
   stickyFluids: a["sticky-fluids"],
+  callbackSteps: a["callback-steps"],
 });
 const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsWith(".py"))
   .map(f => [basename(f, ".py"), readFileSync(join(a.libs, f), "utf8")])) : undefined;
@@ -461,6 +465,7 @@ if (out) {
   const hours = tick => tick === null ? null : +((tick - startTick) / TICKS_PER_SECOND / 3600).toFixed(4);
   writeFileSync(join(out, "summary.json"), JSON.stringify({ reachedH: hours(reachedTick), tpH: hours(tpTick), crashed: [...crashed.keys()], ...standins.legacyTotals(), standins: standins.report(), ...metrics(wallStart, startTick) }, null, 1));
   if (sim.features.importSteps) writeFileSync(join(out, "import_steps.json"), JSON.stringify(sim.importSteps(), null, 1));
+  if (a["callback-steps"] && sim.features.callbackSteps) writeFileSync(join(out, "callback_steps.json"), JSON.stringify(sim.callbackSteps(), null, 1));
 }
 if (a.profile) {
   const ms = sim.systemMs();
