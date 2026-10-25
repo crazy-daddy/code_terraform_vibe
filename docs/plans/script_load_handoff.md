@@ -71,5 +71,11 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    outpost per call (`_sweep_next()`); peak 10,001 to 3,618 (plan, Results, "`set_requests` step-cap crash"
    row). Not confirmed in game.
 
+7. **Seed maker `_pick_chunk` step margin** (next session, agreed 2026-10-25; a measured item-5 target).
+   Highest `run_atomic()` slice left on 0839: seed_maker `_pick_chunk` ~7,850 of 10,000 (78 %), then
+   `script_parking._member_rows` ~6,600 and the `claim_pickups` updater ~5,700 (plan, Results, both 2026-10-25
+   rows). Find what in the slice scales with the save, shrink the chunk or hoist the work, and remeasure with
+   `callback_steps.py --save --hours 0.4` on 0839. The other two only if the first is done and cheap.
+
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same
 save, gate and window as its baseline, `cavecrew-reviewer` before the merge.
