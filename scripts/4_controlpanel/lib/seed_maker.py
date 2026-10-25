@@ -65,7 +65,7 @@ REQUEST_REFRESH_TICKS = 1200  # recompute requests at most this often (~2 min); 
 STATUS_REFRESH_TICKS = 1200  # republish an unchanged status at most this often (archive.STATUS_STALE_TICKS bounds it)
 IDLE_POLL_SECONDS = 10.0  # nothing to try / waiting for material
 DONE_POLL_SECONDS = 120.0  # all species found
-PICK_CHUNK = 150  # triple checks per lib/atomic.py call of the pick (_pick_chunk()): ~7.8k CPython opcodes, under the 10,000-step cap
+PICK_CHUNK = 150  # triple checks per lib/atomic.py call of the pick (_pick_chunk()): ~6.4k CPython opcodes, under the 10,000-step cap
 # A Warehouse runs one transfer at a time and answers others "busy"; makers
 # sharing the outpost's Warehouses collide on ~4% of loads. Retry those
 # instead of aborting the trial (eject + release) on the first one.
@@ -103,18 +103,23 @@ def _pick_chunk(state):
     k, i, j = state["pos"]
     budget = PICK_CHUNK
     while k < n:
+        c = ranked[k]
         while i < k - 1:
-            while j < k:
-                key = combo_key(ranked[i], ranked[j], ranked[k])
+            a = ranked[i]
+            # The step cap counts opcodes: a for-loop over range() and the forms
+            # read once per (i, k) keep the per-check cost low (see PICK_CHUNK).
+            stop = min(k, j + budget)
+            for jj in range(j, stop):
+                b = ranked[jj]
+                key = combo_key(a, b, c)
                 entry = tried.get(key)
                 if entry is None or (entry is not True and not _claim_is_live(entry, tick)):
-                    state["found"] = (key, [ranked[i], ranked[j], ranked[k]])
+                    state["found"] = (key, [a, b, c])
                     return True
-                j += 1
-                budget -= 1
-                if budget <= 0:
-                    state["pos"] = (k, i, j)
-                    return False
+            budget -= stop - j
+            if budget <= 0:
+                state["pos"] = (k, i, stop)
+                return False
             i += 1
             j = i + 1
         k += 1
