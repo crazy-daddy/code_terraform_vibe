@@ -192,6 +192,31 @@ def _fresh_items(items, tick):
     return {i: e for i, e in items.items() if isinstance(e, dict) and e.get("levels") and is_fresh(e, tick, REQUEST_STALE_TICKS)}
 
 
+# Outpost id whose bucket set_requests() last swept for stale entries (_sweep_next()).
+_SWEEP = {"after": None}
+
+
+def _sweep_next(requests, outpost_id, tick):
+    """Prunes the stale entries of one outpost bucket other than `outpost_id`: the next id
+    after the last one swept, in sorted order, wrapping. One bucket per call keeps
+    set_requests() inside the step cap however many outposts publish requests; a bucket
+    whose requester died is emptied within (outposts - 1) calls of any one calling script,
+    since _SWEEP is per-script module state; readers ignore stale entries anyway."""
+    others = sorted(o for o in requests if o != outpost_id)
+    if not others:
+        return
+    after = _SWEEP["after"]
+    o_id = next((o for o in others if after is None or o > after), others[0])
+    _SWEEP["after"] = o_id
+    items = requests[o_id]
+    if isinstance(items, dict):
+        for item_id, entry in list(items.items()):
+            if not is_fresh(entry, tick, REQUEST_STALE_TICKS):
+                del items[item_id]
+    if not isinstance(items, dict) or not items:
+        del requests[o_id]
+
+
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
@@ -202,32 +227,41 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     hauler or a hauler drone may buy them at home instead of finding free
     stock. An empty
     `wants` just withdraws the requester's entries there; so does an empty
-    ladder. Stale entries of any requester are pruned on the way.
+    ladder. Stale entries of any requester are pruned on the way: all of
+    them at `outpost_id`, and those of one other outpost per call
+    (_sweep_next()).
     """
     tick = curr_tick if curr_tick is not None else now_tick()
     added = []
+    # Built outside the transaction: the updater runs as one pure callback
+    # under the step cap, and a Seed Maker's many ladders crashed it there.
+    entries = {}
+    for item_id, values in (wants or {}).items():
+        levels = ladder(values[0])
+        if not levels:
+            continue
+        entry = {"levels": levels, "have": values[1], "by": requester, "tick": tick}
+        if buyable:
+            entry["buy"] = True
+        if len(values) > 2 and values[2] and values[2] > 0:
+            entry["keep"] = values[2]
+        entries[item_id] = entry
 
     def updater(requests):
-        before = requests.get(outpost_id) if isinstance(requests, dict) else None
+        if not isinstance(requests, dict):
+            requests = {}
+        before = requests.get(outpost_id)
         held = set(_fresh_items(before, tick))
-        requests = _prune_requests(requests, lambda o_id, entry: (o_id == outpost_id and _by(entry, requester)) or not is_fresh(entry, tick, REQUEST_STALE_TICKS))
-        added[:] = []
-        if wants:
-            bucket = requests.get(outpost_id, {})
-            for item_id, values in wants.items():
-                levels = ladder(values[0])
-                if not levels:
-                    continue
-                if item_id not in held:
-                    added.append(item_id)
-                entry = {"levels": levels, "have": values[1], "by": requester, "tick": tick}
-                if buyable:
-                    entry["buy"] = True
-                if len(values) > 2 and values[2] and values[2] > 0:
-                    entry["keep"] = values[2]
-                bucket[item_id] = entry
-            if bucket:
-                requests[outpost_id] = bucket
+        bucket = {}
+        if isinstance(before, dict):
+            bucket = {i: e for i, e in before.items() if not _by(e, requester) and is_fresh(e, tick, REQUEST_STALE_TICKS)}
+        bucket.update(entries)
+        if bucket:
+            requests[outpost_id] = bucket
+        elif outpost_id in requests:
+            del requests[outpost_id]
+        _sweep_next(requests, outpost_id, tick)
+        added[:] = [i for i in entries if i not in held]
         return requests
 
     archive.transaction(REQUESTS_KEY, {}, updater)

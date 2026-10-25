@@ -1,6 +1,7 @@
 """Stub tests for logistics_requests.publish_requests(), the shared request publisher."""
 
 import unittest
+from unittest import mock
 
 import harness
 import logistics_requests
@@ -86,6 +87,98 @@ class ClearRequestsTests(StubTestCase):
         logistics_requests.set_requests("outpost_2", "b", {"glass": (R(10), 0)}, 0)
         logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, logistics_requests.REQUEST_STALE_TICKS + 1)
         self.assertNotIn("outpost_2", logistics_requests.archive.get(logistics_requests.REQUESTS_KEY))
+
+
+STALE = logistics_requests.REQUEST_STALE_TICKS
+
+
+def entry(by, tick):
+    return {"levels": R(10), "have": 0, "by": by, "tick": tick}
+
+
+class SetRequestsPruneTests(StubTestCase):
+    """set_requests() prunes its own bucket fully and one other outpost's stale entries per call."""
+
+    def setUp(self):
+        super().setUp()
+        logistics_requests._SWEEP["after"] = None
+
+    def stored(self):
+        return logistics_requests.archive.get(logistics_requests.REQUESTS_KEY)
+
+    def test_own_bucket_replaced_and_pruned(self):
+        logistics_requests.archive.set(
+            logistics_requests.REQUESTS_KEY,
+            {OUTPOST: {"iron": entry("a", STALE), "glass": entry("b", 0), "sand": entry("c", STALE)}},
+        )
+        logistics_requests.set_requests(OUTPOST, "a", {"copper": (R(10), 0)}, STALE + 1)
+        bucket = self.stored()[OUTPOST]
+        self.assertEqual(sorted(bucket), ["copper", "sand"])
+        self.assertEqual(bucket["sand"]["by"], "c")
+
+    def test_other_outposts_swept_one_per_call(self):
+        others = ["outpost_2", "outpost_3", "outpost_4"]
+        logistics_requests.archive.set(
+            logistics_requests.REQUESTS_KEY,
+            {o: {"stale": entry("b", 0), "fresh": entry("b", STALE)} for o in others},
+        )
+        for done in range(1, len(others) + 1):
+            logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, STALE + done)
+            stored = self.stored()
+            for i, o in enumerate(others):
+                self.assertEqual("stale" in stored[o], i >= done, (done, o))
+                self.assertIn("fresh", stored[o])
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, STALE + len(others) + 1)
+        self.assertEqual({o: sorted(self.stored()[o]) for o in others}, {o: ["fresh"] for o in others})
+
+    def test_stale_only_bucket_dropped(self):
+        logistics_requests.archive.set(logistics_requests.REQUESTS_KEY, {"outpost_2": {"stale": entry("b", 0)}})
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, STALE + 1)
+        self.assertNotIn("outpost_2", self.stored())
+
+    def test_sweep_wraps_to_first_outpost(self):
+        others = ["outpost_2", "outpost_3"]
+        logistics_requests.archive.set(
+            logistics_requests.REQUESTS_KEY, {o: {"fresh": entry("b", STALE)} for o in others}
+        )
+        for tick in (STALE + 1, STALE + 2):
+            logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, tick)
+        self.assertEqual(logistics_requests._SWEEP["after"], "outpost_3")
+        stored = self.stored()
+        stored["outpost_2"]["stale"] = entry("b", 0)
+        logistics_requests.archive.set(logistics_requests.REQUESTS_KEY, stored)
+        self.assertIn("stale", self.stored()["outpost_2"])
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, STALE + 3)
+        self.assertEqual(sorted(self.stored()["outpost_2"]), ["fresh"])
+
+    def test_sweep_cursor_on_gone_id_picks_next_greater(self):
+        others = ["outpost_2", "outpost_4"]
+        logistics_requests.archive.set(
+            logistics_requests.REQUESTS_KEY, {o: {"stale": entry("b", 0), "fresh": entry("b", STALE)} for o in others}
+        )
+        logistics_requests._SWEEP["after"] = "outpost_3"
+        logistics_requests.set_requests(OUTPOST, "a", {"iron": (R(10), 0)}, STALE + 1)
+        stored = self.stored()
+        self.assertIn("stale", stored["outpost_2"])
+        self.assertNotIn("stale", stored["outpost_4"])
+
+    def test_empty_wants_withdraw_own_keep_foreign(self):
+        logistics_requests.archive.set(
+            logistics_requests.REQUESTS_KEY, {OUTPOST: {"iron": entry("a", STALE), "glass": entry("b", STALE)}}
+        )
+        logistics_requests.set_requests(OUTPOST, "a", {}, STALE + 1)
+        self.assertEqual(sorted(self.stored()[OUTPOST]), ["glass"])
+
+    def test_wake_only_for_items_not_held(self):
+        logistics_requests.archive.set(logistics_requests.REQUESTS_KEY, {OUTPOST: {"iron": entry("a", STALE)}})
+        wants = {"iron": (R(10), 0), "sand": ([], 0), "glass": (R(5), 0)}
+        with mock.patch.object(logistics_requests, "wake_role") as wake:
+            logistics_requests.set_requests(OUTPOST, "a", wants, STALE + 1)
+        wake.assert_called_once_with("hauler", f"new haul request: {OUTPOST} glass")
+        self.assertEqual(sorted(self.stored()[OUTPOST]), ["glass", "iron"])
+        with mock.patch.object(logistics_requests, "wake_role") as wake:
+            logistics_requests.set_requests(OUTPOST, "a", wants, STALE + 2)
+        wake.assert_not_called()
 
 
 if __name__ == "__main__":
