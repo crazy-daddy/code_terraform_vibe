@@ -42,6 +42,13 @@ class ClaimPickupsTests(StubTestCase):
         self.assertEqual(granted, [("a", "iron", 0)])
         self.assertNotIn(lr.pickup_key("drone_9", DEST, "iron", "a"), lr.pickups_snapshot())
 
+    def test_duplicate_legs_share_one_cut(self):
+        seen = lr.pickups_snapshot()
+        self.reserve("drone_2", "outpost_y", "iron", 3, "a")
+        legs = [("a", "iron", 2), ("a", "iron", 4)]
+        # Source a cut 3: the first leg gives up 2, the second only the remaining 1.
+        self.assertEqual(lr.claim_pickups("drone_9", DEST, legs, seen, NOW), [("a", "iron", 0), ("a", "iron", 3)])
+
     def test_reservation_released_since_seen_does_not_cut(self):
         self.reserve("drone_2", DEST, "iron", 4, "a")
         seen = lr.pickups_snapshot()

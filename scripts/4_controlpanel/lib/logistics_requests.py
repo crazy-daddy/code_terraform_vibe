@@ -472,7 +472,8 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
         src_cut = {}
         for source_id, item_id, _units in legs:
             g = (source_id, item_id)
-            src_cut[g] = max(0, src_now.get(g, 0) - src_before.get(g, 0))
+            if g in src_now:
+                src_cut[g] = max(0, src_now[g] - src_before.get(g, 0))
         for source_id, item_id, units in legs:
             cut_src = src_cut.get((source_id, item_id), 0)
             cut_dest = dest_cut.get(item_id, 0)
