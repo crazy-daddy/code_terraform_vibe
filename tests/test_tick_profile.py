@@ -220,17 +220,22 @@ class MainArgvTest(unittest.TestCase):
         self.assertIn("--include-autoplay", stage)
         self.assertIn("--include-autoplay", node)
 
-    def test_strip_autoplay_is_passed_through(self):
-        calls, _ = self._run("--strip-autoplay")
+    def test_autoplay_is_stripped_by_default(self):
+        calls, _ = self._run()
         stage, node = calls
         self.assertIn("--strip-autoplay", stage)
         self.assertIn("--strip-autoplay", node)
         self.assertNotIn("--include-autoplay", stage + node)
 
-    def test_strip_autoplay_excludes_include_autoplay(self):
+    def test_keep_stale_autoplay_passes_neither_flag(self):
+        calls, _ = self._run("--keep-stale-autoplay")
+        stage, node = calls
+        self.assertFalse({"--strip-autoplay", "--include-autoplay"} & set(stage + node))
+
+    def test_keep_stale_autoplay_excludes_include_autoplay(self):
         for extra in (("--include-autoplay",), ("--preset", "founding")):
             with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-                self._run("--strip-autoplay", *extra)
+                self._run("--keep-stale-autoplay", *extra)
 
 
 if __name__ == "__main__":

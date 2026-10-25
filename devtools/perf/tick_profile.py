@@ -11,6 +11,8 @@ real save, inclusive per function, only around one gated call.
 --preset founding times the autoplay outpost planner (OutpostPlanner._replan) and
 implies --include-autoplay: autoplay/lib is staged and wrappable, the save's
 autoplay slots run current code, and run.mjs starts the planner Automation.
+Without --include-autoplay, the save's autoplay content is stripped (run.mjs --strip-autoplay),
+so its stale copies cannot crash or cost steps; --keep-stale-autoplay runs them.
 Wrapped slice callbacks (score_step, value_rows, ...) inflate call counts and
 can push a slice over the step cap; --chunk-scale shrinks the slices.
 
@@ -302,11 +304,11 @@ def main():
         "wrapped, the save's autoplay slots get current code and the planner Automation runs",
     )
     parser.add_argument(
-        "--strip-autoplay",
+        "--keep-stale-autoplay",
         action="store_true",
-        help="load none of the save's autoplay content (save_scripts.py and run.mjs --strip-autoplay): its slots "
-        "get an empty script, its autoplay lib modules are dropped from the run; excludes --include-autoplay "
-        "and --preset founding",
+        help="run the save's autoplay content from its stale copies, as rows before 2026-10-25 did; by default "
+        "it is stripped (save_scripts.py and run.mjs --strip-autoplay: its slots get an empty script, its autoplay "
+        "lib modules are dropped); excludes --include-autoplay and --preset founding",
     )
     parser.add_argument(
         "--chunk-scale",
@@ -341,9 +343,11 @@ def main():
         if getattr(args, key) is None:
             setattr(args, key, preset[key])
     args.include_autoplay = args.include_autoplay or preset["include_autoplay"]
-    if args.include_autoplay and args.strip_autoplay:
-        parser.error("--strip-autoplay excludes --include-autoplay (and --preset founding, which implies it)")
-    autoplay = ["--include-autoplay"] if args.include_autoplay else ["--strip-autoplay"] if args.strip_autoplay else []
+    if args.include_autoplay and args.keep_stale_autoplay:
+        parser.error("--keep-stale-autoplay excludes --include-autoplay (and --preset founding, which implies it)")
+    autoplay = (
+        ["--include-autoplay"] if args.include_autoplay else [] if args.keep_stale_autoplay else ["--strip-autoplay"]
+    )
 
     if args.summarize:
         summarize(args.summarize, args.top, args.min_total, args.filter)

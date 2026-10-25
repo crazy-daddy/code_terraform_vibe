@@ -10,6 +10,7 @@ Follow-up to [performance_optimization.md](performance_optimization.md) (the 202
 - Ticks are inclusive game ticks per call with the profiler's wrappers on, which inflate by ~40 % (more with many modules wrapped). Read them as shares, and the unwrapped block timings as absolutes. Windows: 0.3 to 0.4 game hours.
 - Raw outputs: session scratchpad `agentB/run{1,2,3,4b,5,6}.txt`, `blk{1,5}.txt` (not committed).
 - Log level: from 2026-10-22 on, measurement runs use info (the `tick_profile.py` default since `d74a0e9`); older rows ran at debug. Building debug lines costs steps: the drone plan on 0839 measured 303 ticks at debug against 210 at info.
+- Autoplay: from 2026-10-25 on, `tick_profile.py` strips the save's autoplay content unless `--include-autoplay` (or `--preset founding`) stages it; older rows ran it from the save's stale copies (on 0839 `panel_7` crashed with an `ImportError` at load, and 14 stale autoplay libs loaded). `--keep-stale-autoplay` reproduces the old runs.
 
 ## Measured cost per planning phase
 
