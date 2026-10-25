@@ -87,6 +87,7 @@ class MachinePackUpgradeTests(StubTestCase):
         self.world.add_pioneer("pioneer_1")
         self.world.run_control.states["pioneer_1"] = "paused"
         archive.set(PARKED_KEY, {"pioneer_1": {"kind": "pioneer", "mode": "paused", "since": 0, "role": "builder"}})
-        with mock.patch.object(bp, "plan_upgrade", return_value=Result("not_enough_items", blueprint_ids=[])):
+        with mock.patch.object(bp, "plan_upgrade", return_value=Result("not_enough_items", blueprint_ids=[])) as plan:
             self.upgrader.step(0)
+        plan.assert_called_once()  # reached the plan, not an earlier gate
         self.assertIn("pioneer_1", archive.get(PARKED_KEY, {}))

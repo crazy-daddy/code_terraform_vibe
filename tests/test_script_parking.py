@@ -664,6 +664,18 @@ class VehicleParkingTests(StubTestCase):
         logistics_requests.set_requests("outpost_1", "smelter", {"iron_ore": (harness.request(10), 0)}, late)
         self.assertNotIn("drone_1", self.parked())  # the stale key was invisible to haulers: new work
 
+    def test_rewritten_levelless_key_wakes_the_hauler(self):
+        self.idle("drone_1", "drone", "hauler", state="IDLE")
+        self.parking.step(self.grids, 10.0)
+        now = self.world.clock.now
+        # A fresh entry without a ladder: active_requests() hides it, so writing the key is new work.
+        self.world.notebook.data[logistics_requests.REQUESTS_KEY] = {
+            "outpost_1": {"iron_ore": {"levels": [], "have": 0, "by": "fab", "tick": now}}
+        }
+        self.assertIn("drone_1", self.parked())
+        logistics_requests.set_requests("outpost_1", "fab", {"iron_ore": (harness.request(10), 0)}, now)
+        self.assertNotIn("drone_1", self.parked())
+
     def test_idle_vehicle_is_paused_and_resumed_when_due(self):
         self.idle("pioneer_1", "pioneer", "builder")
         self.parking.step(self.grids, 10.0)
@@ -907,9 +919,8 @@ class FieldProviderParkingTests(StubTestCase):
             parking_client.wake_kind("field_provider", "test", within={"sprinkler_1", "smelter_1"}), ["sprinkler_1"]
         )
         self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"grow_lamp_1", "smelter_1"})
-        self.assertEqual(
-            parking_client.wake_kind("field_provider", "test", within=set()), []
-        )  # empty = none, None = all
+        # An empty `within` wakes none; None wakes all.
+        self.assertEqual(parking_client.wake_kind("field_provider", "test", within=set()), [])
         self.assertIn("grow_lamp_1", self.world.notebook.data[PARKED_KEY])
 
     def test_wake_kind_clears_only_requests_filed_before_parking(self):
