@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 import field_layout
 import harvester_pure
 from archive import archive
+from atomic import run_atomic
 from components import component, home_outpost
 from game_clock import now_tick
 from seed_supply import RECIPES_KEY
@@ -357,6 +358,21 @@ class HarvesterHubMixin:
 
     # ------------------------------------------------------------- cell views
 
+    def cell_view(self, cells):
+        """
+        (statuses, planted cells, base sector or None) of the step's cell read: one pass in atomic
+        harvester_pure.cell_view() chunks of harvester_pure.VIEW_CHUNK cells.
+        """
+        items = list(cells.items())
+        size = harvester_pure.VIEW_CHUNK
+        statuses, planted, base = {}, {}, None
+        for i in range(0, len(items), size):
+            part_statuses, part_planted, part_base = run_atomic(harvester_pure.cell_view, items[i : i + size], PLANT_STATUSES)
+            statuses.update(part_statuses)
+            planted.update(part_planted)
+            base = base or part_base
+        return statuses, planted, base
+
     def cell_statuses(self, cells):
         """{sector: Cell.status} of `cells`: the step's shared dict when `cells` is the step's read, else a fresh one."""
         fp = self._host.field_pass
@@ -375,18 +391,18 @@ class HarvesterHubMixin:
         """
         [(sector, (status, plant, growth, light_h, water_h, salt_h, lit, watered, salted))] of the planted cells
         (harvester_pure.ROW_ATTRS): the one place the per-cell attributes of the publish/care scans are read,
-        so the scans themselves are pure. Memoised on the planted dict.
+        so the scans themselves are pure. Read in atomic chunks of harvester_pure.READ_CHUNK cells
+        (harvester_pure.cell_rows()). Memoised on the planted dict.
         """
         planted = self.planted_cells(cells)
         memo = getattr(self, "_rows_memo", None)
         if memo is not None and memo[0] is planted:
             return memo[1]
-        # Game Cell objects: read outside any atomic callback, one explicit tuple per cell (no `operator` module in
-        # the game's interpreter). Order and defaults follow harvester_pure.ROW_ATTRS.
-        rows = [
-            (sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0), getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0), getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False), getattr(c, "watered", False), getattr(c, "salted", False)))
-            for sector, c in planted.items()
-        ]
+        items = list(planted.items())
+        size = harvester_pure.READ_CHUNK
+        rows = []
+        for i in range(0, len(items), size):
+            rows.extend(run_atomic(harvester_pure.cell_rows, items[i : i + size]))
         self._rows_memo = (planted, rows)
         return rows
 

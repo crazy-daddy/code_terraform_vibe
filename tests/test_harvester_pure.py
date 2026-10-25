@@ -12,9 +12,9 @@ TABLE = {"a": ["light"], "b": ["light", "water"], "c": ["light", "water", "salt"
 
 
 def ops(fn, *args):
-    """CPython opcodes executed inside harvester_pure while fn(*args) runs (pessimistic stand-in for game steps)."""
+    """CPython opcodes executed inside fn's module while fn(*args) runs (pessimistic stand-in for game steps)."""
     total = [0]
-    here = os.path.basename(hp.__file__)
+    here = os.path.basename(fn.__code__.co_filename)
 
     def tracer(frame, event, arg):
         frame.f_trace_opcodes = True
@@ -153,6 +153,47 @@ class WorstCaseStepTests(unittest.TestCase):
             self.assertLess(ops(hp.needed_seeds, items, statuses, OPEN, set(SECTORS), seed_ids), hp.ATOMIC_STEP_BUDGET)
         self.assertLess(ops(hp.rotation_counts, items, set(), seed_ids), hp.ATOMIC_STEP_BUDGET)
         self.assertLess(ops(hp.seeded_items, items, set(SECTORS), set(SECTORS)), hp.ATOMIC_STEP_BUDGET)
+
+
+class _Cell:
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+
+class CellRowsTests(unittest.TestCase):
+    def test_rows_follow_row_attrs_with_defaults(self):
+        full = _Cell(**{a: i for i, a in enumerate(hp.ROW_ATTRS)})
+        rows = hp.cell_rows([("A1", full), ("A2", _Cell())])
+        self.assertEqual(rows[0], ("A1", tuple(range(len(hp.ROW_ATTRS)))))
+        self.assertEqual(rows[1], ("A2", ("", None, 0, 0, 0, 0, False, False, False)))
+
+    def test_read_chunk(self):
+        cells = [(s, _Cell(**{a: 1 for a in hp.ROW_ATTRS})) for s in SECTORS[: hp.READ_CHUNK]]
+        self.assertLess(ops(hp.cell_rows, cells), hp.ATOMIC_STEP_BUDGET)
+
+    def test_cell_view_matches_per_cell_reads(self):
+        plant = ("growing", "stalled", "mature")
+        kinds = ["empty", "base", "growing", "item", "mature", "base", "stalled", None]
+        items = [
+            (s, _Cell(status=kinds[i % len(kinds)]) if kinds[i % len(kinds)] else _Cell())
+            for i, s in enumerate(SECTORS[:20])
+        ]
+        statuses, planted, base = hp.cell_view(items, plant)
+        self.assertEqual(statuses, {s: getattr(c, "status", None) for s, c in items})
+        self.assertEqual(planted, {s: c for s, c in items if statuses[s] in plant})
+        self.assertEqual(base, SECTORS[1])
+        self.assertIsNone(hp.cell_view(items[:1], plant)[2])
+
+    def test_view_chunk(self):
+        cells = [(s, _Cell(status=("growing", "base")[i % 2])) for i, s in enumerate((SECTORS * 2)[: hp.VIEW_CHUNK])]
+        self.assertLess(ops(hp.cell_view, cells, ("growing", "stalled", "mature")), hp.ATOMIC_STEP_BUDGET)
+
+    def test_id_chunk(self):
+        import harvesting
+
+        cells = [_Cell(id=f"A{i}") for i in range(harvesting.ID_CHUNK)]
+        self.assertEqual(harvesting._id_pairs(cells[:2]), [("A0", cells[0]), ("A1", cells[1])])
+        self.assertLess(ops(harvesting._id_pairs, cells), hp.ATOMIC_STEP_BUDGET)
 
 
 class MovedPureTests(unittest.TestCase):

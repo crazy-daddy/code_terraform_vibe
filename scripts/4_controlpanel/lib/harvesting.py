@@ -5,9 +5,22 @@
 
 from typing import TYPE_CHECKING
 
+from atomic import run_atomic, run_batched
 from machine_controller import MachineController
 from swallow import swallowed
 from tree_console import TreeConsole
+
+ID_CHUNK = 500  # field cells per atomic _id_pairs() call (~7 operations each)
+
+
+def _field_cells(harvester):
+    """The field's Cells as a list (cells(), a side-effect-free read)."""
+    return list(harvester.cells())
+
+
+def _id_pairs(cells):
+    """[(sector, Cell)] of `cells`."""
+    return [(c.id, c) for c in cells]
 
 
 class HarvesterController(MachineController):
@@ -51,9 +64,10 @@ class HarvesterController(MachineController):
             return self.base_sector
 
     def read_cells(self):
-        """{sector: Cell} of the field (cells()); {} when unreadable."""
+        """{sector: Cell} of the field (cells()); {} when unreadable. Read and keyed in atomic calls (game reads only)."""
         try:
-            return {c.id: c for c in self.harvester.cells()}
+            cells = run_atomic(_field_cells, self.harvester)
+            return dict(run_batched(_id_pairs, cells, ID_CHUNK))
         except Exception as e:
             self.log.debug(f"[{self.name}] cells() failed: {e}")
             return {}

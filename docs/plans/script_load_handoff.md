@@ -15,7 +15,10 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 - **Import-cap margin**: done 2026-10-24 (item 1 below). `devtools/perf/import_steps.py --save SAVE` measures
   every slot's import chains and fails over 90 % of the cap; the `outpost_plan` chain went 9,622 to 7,628 steps
   on 0839 (plan, Results, 2026-10-24 "Import-cap margin" row).
-- **More atomic work** (Harvester `publish`, demand cascade on a prefetched snapshot): not started.
+- **More atomic work**: Harvester `publish` done 2026-10-24 (plan, Results, "Harvester `publish`" row): the
+  cost sat in Cell attribute reads outside atomic, not in the pure scans, which were already atomic. Left in
+  `publish`: `seed_demand` ~9 and `row_scan` ~8 wrapped ticks (chunk counts); `machines` ~7 ticks per step is
+  unprofiled. Demand cascade on a prefetched snapshot: not started.
 - **Centralize Smelter/Fabricator demand**: record, publisher and Smelter split landed (2026-10-11); open are
   the Fabricator split, readers, intermediate netting, headless A/B.
 - **Event-driven Automation**: Phases 1, 1.3, 1.6, 2 done; open are the live confirm of Phase 2, the Phase 3.2
@@ -52,7 +55,7 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    `needs`, `plan_hosts` carries the 276 ticks, then the usual hoist or slice. Rankings are pinned by a test.
    Done 2026-10-24: `snapshot()` stores each outpost's covered roles once; 269 to 190 ticks.
 4. ~~**`outpost_sources`**~~: closed by measurement 2026-10-24, no code (plan "Results" row).
-5. **More atomic work** only after 1-4, and only with a measured target: the plan's "Do not pursue" list shows
+5. **More atomic work** only after 1-4, and only with a measured target (Harvester `publish` done 2026-10-24): the plan's "Do not pursue" list shows
    how often an unmeasured item turned out to cost nothing.
 
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same

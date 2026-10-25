@@ -157,12 +157,17 @@ class HarvesterPavingMixin:
         return curr_tick - getattr(self, "_pave_fail_tick", -PAVE_FAIL_COOLDOWN_TICKS) < PAVE_FAIL_COOLDOWN_TICKS
 
     def pave_seed_id(self, rules):
-        """Seed whose blend costs the least (common life forms)."""
+        """Seed whose blend costs the least (common life forms); memoised on the rules object."""
+        memo = getattr(self, "_pave_seed_memo", None)
+        if memo is not None and memo[0] is rules:
+            return memo[1]
         with_blend = [sp for sp in rules if rules[sp].get("blend")]
-        if not with_blend:
-            return None
-        best = min(with_blend, key=lambda sp: (field_layout.blend_cost(rules, sp), sp))
-        return rules[best].get("seed_id", "seed_" + best)
+        seed_id = None
+        if with_blend:
+            best = min(with_blend, key=lambda sp: (field_layout.blend_cost(rules, sp), sp))
+            seed_id = rules[best].get("seed_id", "seed_" + best)
+        self._pave_seed_memo = (rules, seed_id)
+        return seed_id
 
     def paving_seed_demand(self, layout, cells, rules, spare_items, unpaved=None):
         """{seed_id: n} seeds still needed for paving after using spare loose items (`unpaved`: unpaved(), when the caller has it)."""

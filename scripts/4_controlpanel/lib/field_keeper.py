@@ -246,9 +246,9 @@ class FieldKeeperController(HarvesterHubMixin, HarvesterHeatMixin, HarvesterPavi
             return None
         # One statuses dict per step: target choice (nearest) and the route
         # (move_to) then share a single heat map.
-        statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
-        fp.set_view(cells, statuses, {s: cells[s] for s, st in statuses.items() if st in PLANT_STATUSES})
-        self.base_sector = self.base_from_cells(cells, statuses)
+        statuses, planted, base = self.cell_view(cells)
+        fp.set_view(cells, statuses, planted)
+        self.base_sector = base or self.base_sector
         self.mark("cells")
         # Recipes change only when the Seed Maker republishes; the layout only
         # on the switch to full or a new chunk. Neither is re-read every step.

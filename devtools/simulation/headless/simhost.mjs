@@ -6,6 +6,7 @@
 // into the repo: loadSimModule() appends a small export shim to it at run
 // time and caches the result under devtools/simulation/headless/.cache/ (gitignored).
 
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -14,7 +15,25 @@ import { patchInstantBuild, patchScale } from "./anchors.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..", "..");
-export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
+const SIMWORKER_REL = ["internals", "terraform_decompiled", "simworker", "deobfuscated.js"];
+
+// This checkout's internals/, else the main checkout's: an agent worktree has no
+// internals/ (untracked submodule data), and git's common dir names its main checkout.
+function defaultSimworker() {
+  const own = join(REPO, ...SIMWORKER_REL);
+  if (existsSync(own)) return own;
+  try {
+    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const main = join(dirname(common), ...SIMWORKER_REL);
+    if (existsSync(main)) return main;
+  } catch {
+    // No git: keep this checkout's path, so the not-found error names it.
+  }
+  return own;
+}
+
+export const DEFAULT_SIMWORKER = defaultSimworker();
 const SHIM_VERSION = 10;
 
 // The shim reaches the simulation through minified names (core class, SimHost,

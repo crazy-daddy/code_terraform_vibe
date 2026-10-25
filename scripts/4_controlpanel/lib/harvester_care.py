@@ -108,7 +108,7 @@ class HarvesterCareMixin:
         if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
             return memo[3]
         rows = self._host.planted_rows(cells)
-        table = harvester_pure.care_kind_table(rules)
+        table = self.care_kind_table(rules)
         slots = harvester_pure.care_slots(table, harvester_pure.salt_usable(table, self._host.stock_count("salt")))
         size = harvester_pure.ROW_CHUNK
         parts = [run_atomic(harvester_pure.scan_rows, rows[i : i + size], slots, kept) for i in range(0, len(rows), size)]
