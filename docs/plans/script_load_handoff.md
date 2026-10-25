@@ -41,9 +41,9 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   trim: every `free` band has a reader. A smaller slice would cut step peaks but age the record further.
 - Real-save peak steps per callback: measured 2026-10-25 with `devtools/perf/callback_steps.py` (plan, Results,
   "Callback step margin"). The `set_requests` updater crash (seed_maker_1 / _3 at 10,001 / 10,000) is fixed
-  2026-10-25 (item 6): peak 3,618 (36 %), 0 slots over 90 %. Highest left: seed_maker `_pick_chunk` ~7,850
-  (78 %), `script_parking._member_rows` ~6,600, `claim_pickups` updater ~5,700. `fair_rival_bands` peaks at
-  3,459 (34.6 %).
+  2026-10-25 (item 6): peak 3,618 (36 %), 0 slots over 90 %. Seed maker `_pick_chunk` 7,887 to 6,776 (68 %,
+  item 7). Highest left: `_pick_chunk` ~6,780, `script_parking._member_rows` ~6,570, `claim_pickups` updater
+  ~5,550. `fair_rival_bands` peaks at 3,459 (34.6 %).
 
 ## Recommended order
 
@@ -76,6 +76,9 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    `script_parking._member_rows` ~6,600 and the `claim_pickups` updater ~5,700 (plan, Results, both 2026-10-25
    rows). Find what in the slice scales with the save, shrink the chunk or hoist the work, and remeasure with
    `callback_steps.py --save --hours 0.4` on 0839. The other two only if the first is done and cheap.
+   Done 2026-10-25: nothing scales with the save (a full chunk of `PICK_CHUNK` checks is the peak); cheaper
+   inner loop, same picks; peak 7,887 to 6,776 (plan, Results, "Seed maker `_pick_chunk` step margin" row).
+   `PICK_CHUNK` kept at 150: each chunk costs about a tick, so a smaller one slows long picks.
 
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same
 save, gate and window as its baseline, `cavecrew-reviewer` before the merge.
