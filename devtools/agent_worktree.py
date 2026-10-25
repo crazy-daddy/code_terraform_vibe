@@ -44,7 +44,7 @@ BRANCH_PREFIX = "agent/"
 MAIN_BRANCH = "main"
 VENV_PTH = "_main_venv.pth"
 # Gitignored state the worktree rebuilds on demand; anything else ignored blocks remove.
-REGENERABLE = {".venv", ".pyright-resolved", "__pycache__", ".ruff_cache", ".pytest_cache", ".sync-backups"}
+REGENERABLE = {".venv", ".pyright-resolved", "__pycache__", ".ruff_cache", ".pytest_cache", ".sync-backups", ".cache"}
 # Copied into a new worktree so resolve-preview picks the same tier as the main checkout.
 SEEDED_STATE = ("devtools/.sync-backups/tier_high_water.json",)
 # Conventional Commits subject, per CODE_GUIDES.md#commits
