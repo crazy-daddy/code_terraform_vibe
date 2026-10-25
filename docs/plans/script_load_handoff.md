@@ -40,9 +40,9 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
   `outpost_tier_deficits` (~55 %) and `outpost_tier_free` (~45 %); the archive write costs 1 tick. No record
   trim: every `free` band has a reader. A smaller slice would cut step peaks but age the record further.
 - Real-save peak steps per callback: measured 2026-10-25 with `devtools/perf/callback_steps.py` (plan, Results,
-  "Callback step margin"). Open: seed_maker_1 and seed_maker_3 crash on 0839 (StepLimitError at 10,001 / 10,000)
-  in the `logistics_requests.set_requests` archive transaction updater; seed_maker_4 reaches 80 %. The updater
-  prunes across the whole requests record (`_prune_requests`), so its cost grows with all outposts' requests. `fair_rival_bands` peaks at
+  "Callback step margin"). The `set_requests` updater crash (seed_maker_1 / _3 at 10,001 / 10,000) is fixed
+  2026-10-25 (item 6): peak 3,618 (36 %), 0 slots over 90 %. Highest left: seed_maker `_pick_chunk` ~7,850
+  (78 %), `script_parking._member_rows` ~6,600, `claim_pickups` updater ~5,700. `fair_rival_bands` peaks at
   3,459 (34.6 %).
 
 ## Recommended order
@@ -60,6 +60,16 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 4. ~~**`outpost_sources`**~~: closed by measurement 2026-10-24, no code (plan "Results" row).
 5. **More atomic work** only after 1-4, and only with a measured target (Harvester `publish` done 2026-10-24): the plan's "Do not pursue" list shows
    how often an unmeasured item turned out to cost nothing.
+
+6. **`set_requests` step-cap crash** (next session, agreed 2026-10-25; correctness, ahead of item 5).
+   `callback_steps.py --save` on 0839 (plan, Results, "Callback step margin" row): `seed_maker_1` and
+   `seed_maker_3` crash with `StepLimitError` in the `logistics_requests.set_requests` archive transaction
+   updater (peaks 10,001 and 10,000), `seed_maker_4` at 80 %. `_prune_requests` walks the whole requests record,
+   so the cost grows with every outpost's requests. Confirm in game if possible, then move the prune (or its
+   ladder parse) out of the updater or chunk it, and remeasure with the same command and window.
+   Done 2026-10-25: entries built before the transaction, stale prune limited to the own bucket plus one other
+   outpost per call (`_sweep_next()`); peak 10,001 to 3,618 (plan, Results, "`set_requests` step-cap crash"
+   row). Not confirmed in game.
 
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same
 save, gate and window as its baseline, `cavecrew-reviewer` before the merge.
