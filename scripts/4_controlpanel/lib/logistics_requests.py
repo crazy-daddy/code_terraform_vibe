@@ -183,6 +183,15 @@ def _prune_requests(requests, drop):
     return requests
 
 
+def _fresh_items(items, tick):
+    """{item_id: entry} of the live requests in one outpost's bucket: non-stale dict entries
+    with a ladder. Shared by active_requests() and set_requests()'s "already held" check, so
+    a key haulers cannot see counts as new work when it is written again."""
+    if not isinstance(items, dict):
+        return {}
+    return {i: e for i, e in items.items() if isinstance(e, dict) and e.get("levels") and is_fresh(e, tick, REQUEST_STALE_TICKS)}
+
+
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
@@ -200,7 +209,7 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
 
     def updater(requests):
         before = requests.get(outpost_id) if isinstance(requests, dict) else None
-        held = {i for i, e in before.items() if isinstance(e, dict) and is_fresh(e, tick, REQUEST_STALE_TICKS)} if isinstance(before, dict) else set()
+        held = set(_fresh_items(before, tick))
         requests = _prune_requests(requests, lambda o_id, entry: (o_id == outpost_id and _by(entry, requester)) or not is_fresh(entry, tick, REQUEST_STALE_TICKS))
         added[:] = []
         if wants:
@@ -305,9 +314,7 @@ def active_requests(curr_tick=None):
     if not isinstance(raw, dict):
         return result
     for o_id, items in raw.items():
-        if not isinstance(items, dict):
-            continue
-        fresh = {i: e for i, e in items.items() if is_fresh(e, tick, REQUEST_STALE_TICKS) and isinstance(e, dict) and e.get("levels")}
+        fresh = _fresh_items(items, tick)
         if fresh:
             result[o_id] = fresh
     return result

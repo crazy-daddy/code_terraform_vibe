@@ -44,7 +44,6 @@ from building_ops import CALL_FAILED_STATUSES, classify, undeploy
 from components import component, start_script
 from drone_claims import set_drone_recalled
 from drone_depots import discover_drone_depots
-from parking_client import resume_vehicle
 from storage import inventory_count
 from swallow import swallowed
 from tree_console import TreeConsole
@@ -82,8 +81,7 @@ def _set_recalled(machine_id, kind, on):
 def request_decommission(machine_id, kind):
     """Card button: queue machine_id ("pioneer", "rover" or "drone") for retirement and recall it."""
     archive.mutate(DECOMMISSION_KEY, lambda s: s.update({machine_id: {"kind": kind, "state": "requested", "attempts": 0}}))
-    _set_recalled(machine_id, kind, True)
-    resume_vehicle(machine_id, "retire requested")
+    _set_recalled(machine_id, kind, True)  # setting a recall resumes a paused vehicle
 
 
 def cancel_decommission(machine_id):
