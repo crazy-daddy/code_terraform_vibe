@@ -35,10 +35,10 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 - ~~`drone_haul_plan.outpost_sources` stays ~95 ticks after Vector 1.~~ Closed by measurement (2026-10-24,
   plan "Results"): ~95 is the live path before the first snapshot publish (7 of 49 picks); on the snapshot it
   costs ~21 of an 84-tick plan. Debug logging as a whole costs the drone plan ~93 ticks per call.
-- The snapshot publisher step costs ~105 ticks on 0839 and cancels the role-publish saving inside the
-  orchestrator. The record is ~16 KB, 88 % `free`; the trim to `FAIR_BANDS` plus the top band is dropped for
-  the readers: `read_snapshot` sits in ~12 untimed ticks of `plan_haul_job` (2026-10-24). It may still pay on
-  the publisher side (write cost), unmeasured.
+- The snapshot publisher step (~105 ticks on 0839) is closed by measurement (plan "Results", 2026-10-25): the
+  step fills its `LOGISTICS_SLICE_TICKS` budget by design; a 6-outpost round costs ~165 ticks, spread over
+  `outpost_tier_deficits` (~55 %) and `outpost_tier_free` (~45 %); the archive write costs 1 tick. No record
+  trim: every `free` band has a reader. A smaller slice would cut step peaks but age the record further.
 - Real-save peak steps per callback are unmeasured (plan, "Tool gaps"); `step_profile.py haul` peaks at ~2,224
   steps (22 % of the cap) on synthetic input.
 
