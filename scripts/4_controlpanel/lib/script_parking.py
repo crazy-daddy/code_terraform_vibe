@@ -168,20 +168,23 @@ def _power_module():
     return power
 
 
-# Grid members per atomic _member_rows() call (~25 operations each).
+# Grid members per atomic _member_rows() call: ~31 steps each, ~5.1k per full chunk on 0839, under the 10,000-step cap.
 MEMBER_CHUNK = 150
 
 
 def _member_rows(chunk, anchor, members, by_type, dark):
     """Adds one slice of a grid's members to the pass's index: members {id: (anchor, type_id, powered)},
     by_type {type_id: [ids]}, dark [ids switched off]. Pure reads, run atomically."""
+    # The step cap counts opcodes: plain reads of the always-set PowerGridMember fields
+    # and a bound setdefault cost less than getattr() calls per member (see MEMBER_CHUNK).
+    group = by_type.setdefault
     for member in chunk:
-        member_id = getattr(member, "id", None)
+        member_id = member.id
         if member_id:
-            type_id = getattr(member, "type_id", "")
-            powered = bool(getattr(member, "powered", True))
+            type_id = member.type_id
+            powered = bool(member.powered)
             members[member_id] = (anchor, type_id, powered)
-            by_type.setdefault(type_id, []).append(member_id)
+            group(type_id, []).append(member_id)
             if not powered:
                 dark.append(member_id)
 

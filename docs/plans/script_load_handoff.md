@@ -42,8 +42,8 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
 - Real-save peak steps per callback: measured 2026-10-25 with `devtools/perf/callback_steps.py` (plan, Results,
   "Callback step margin"). The `set_requests` updater crash (seed_maker_1 / _3 at 10,001 / 10,000) is fixed
   2026-10-25 (item 6): peak 3,618 (36 %), 0 slots over 90 %. Seed maker `_pick_chunk` 7,887 to 6,776 (68 %,
-  item 7). Highest left: `_pick_chunk` ~6,780, `script_parking._member_rows` ~6,570, `claim_pickups` updater
-  ~5,550. `fair_rival_bands` peaks at 3,459 (34.6 %).
+  item 7). `script_parking._member_rows` 6,571 to 5,074 (51 %, item 8). Highest left: `_pick_chunk` ~6,780,
+  `claim_pickups` updater ~5,550. `fair_rival_bands` peaks at 3,459 (34.6 %).
 
 ## Recommended order
 
@@ -79,6 +79,17 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    Done 2026-10-25: nothing scales with the save (a full chunk of `PICK_CHUNK` checks is the peak); cheaper
    inner loop, same picks; peak 7,887 to 6,776 (plan, Results, "Seed maker `_pick_chunk` step margin" row).
    `PICK_CHUNK` kept at 150: each chunk costs about a tick, so a smaller one slows long picks.
+
+8. **`script_parking._member_rows` step margin** (agreed 2026-10-25; a measured item-5 target). Next highest
+   `run_atomic()` slice on 0839 after item 7: automation_1 `_member_rows` ~6,570 of 10,000 (66 %).
+   Done 2026-10-25: nothing scales with the save (a full chunk of `MEMBER_CHUNK` grid members is the peak, ~41
+   steps each, now ~31); direct reads of the always-set `PowerGridMember` fields instead of `getattr()` with defaults,
+   `by_type.setdefault` bound once per slice, same index; peak 6,571 to 5,074 (plan, Results,
+   "`script_parking._member_rows` step margin" row). `MEMBER_CHUNK` kept at 150.
+   Next candidate: the `claim_pickups` archive updater (drone_7 5,551, n=16). It walks the whole pickups
+   record four times per call (`_other_units()` over `seen` and the live record, by source and by dest), so
+   it grows with every hauler's reservations, unlike items 7 and 8. Cheaper: group `seen` before the
+   transaction (it is a snapshot, not archive state) and do both groupings in one walk of the live record.
 
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same
 save, gate and window as its baseline, `cavecrew-reviewer` before the merge.
