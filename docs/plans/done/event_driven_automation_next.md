@@ -2,22 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Finish Phase 1 (1.3 and 1.6) and land Phase 2 of [event_driven_automation.md](event_driven_automation.md), so a fast parking pass with nothing due returns before its first archive read.
+**Goal:** Finish Phase 1 (1.3 and 1.6) and land Phase 2 of [event_driven_automation.md](../event_driven_automation.md), so a fast parking pass with nothing due returns before its first archive read.
 
 **Architecture:** Every poll still left in the fast pass moves to its cause, with the full pass as the backstop: grid supervision wakes Oil Generators on the reserve's drop, the request and command writers resume paused vehicles. The parking engine then keeps the earliest due tick (`next_due`) in the instance and skips a fast pass that has nothing due. The one physics poll with no known timing (Oil Pump well) keeps running on ids cached from the last pass, without reading the archive.
 
-**Tech Stack:** game-restricted Python under `scripts/4_controlpanel/` ([CODE_GUIDES.md](../../CODE_GUIDES.md) "Game interpreter"), offline stub tests (`tests/`, `python -m unittest discover -s tests`), headless A/B (`devtools/simulation/headless/`, [stub_tests.md §10b](../cheatsheet/stub_tests.md)).
+**Tech Stack:** game-restricted Python under `scripts/4_controlpanel/` ([CODE_GUIDES.md](../../../CODE_GUIDES.md) "Game interpreter"), offline stub tests (`tests/`, `python -m unittest discover -s tests`), headless A/B (`devtools/simulation/headless/`, [stub_tests.md §10b](../../cheatsheet/stub_tests.md)).
 
-**Spec:** [docs/plans/event_driven_automation.md](event_driven_automation.md), items 1.3, 1.6 (1 and 2), Phase 2 (1 to 4) and Phase 3.1. Current code state: 2026-10-23 assessment, see the Status table there.
+**Spec:** [docs/plans/event_driven_automation.md](../event_driven_automation.md), items 1.3, 1.6 (1 and 2), Phase 2 (1 to 4) and Phase 3.1. Current code state: 2026-10-23 assessment, see the Status table there.
 
 ## Global Constraints
 
 - Work in a worktree: `python devtools/agent_worktree.py new event-driven-next`. Commit on its branch after every task. Merge only after the operator approves, with `python devtools/agent_worktree.py merge event-driven-next -m "<subject>"`.
 - Game interpreter rules (CODE_GUIDES.md "Game interpreter"): no standard library, no `with`, one-line imports, no module-level import cycle between `lib/` modules. `parking_client.py` imports only `archive`, `game_clock`, `geometry`, `swallow`, `tree_console`; it must stay that way, so `power.py` and `logistics_requests.py` may import it, never the reverse.
-- An `archive.transaction()` updater must be pure (no log calls); mutate a closure list to pass data out ([archive_ipc.md](../cheatsheet/archive_ipc.md) "Updaters must be pure").
+- An `archive.transaction()` updater must be pure (no log calls); mutate a closure list to pass data out ([archive_ipc.md](../../cheatsheet/archive_ipc.md) "Updaters must be pure").
 - Before an edit with more than one hunk under `scripts/`, set a sync hold (CLAUDE.md "Boundaries"); remove it after the last edit of the task.
 - Checks after every task: `python -m unittest discover -s tests`, `.venv/Scripts/python.exe -m ruff check <paths>`, `.venv/Scripts/python.exe -m ruff format <paths>`, then `.venv/Scripts/python.exe devtools/scripts_sync.py resolve-preview` and `npx pyright`.
-- A changed constant updates [dev_workflow.md §1d-2](../cheatsheet/dev_workflow.md) in the same commit. `WAKE_AFTER_TICKS` values stay as they are.
+- A changed constant updates [dev_workflow.md §1d-2](../../cheatsheet/dev_workflow.md) in the same commit. `WAKE_AFTER_TICKS` values stay as they are.
 - Every wake moved to a writer keeps its full-pass check as the backstop (spec principle "A full pass stays as the backstop").
 - Commit messages: Conventional Commits (CODE_GUIDES.md "Commits"), no AI attribution.
 
