@@ -91,5 +91,13 @@ the order to take it in. Numbers are from [performance_planning_2026-10.md](perf
    it grows with every hauler's reservations, unlike items 7 and 8. Cheaper: group `seen` before the
    transaction (it is a snapshot, not archive state) and do both groupings in one walk of the live record.
 
+9. **`claim_pickups` updater step margin** (agreed 2026-10-25; a measured item-5 target, the candidate above).
+   Done 2026-10-25: `seen` is grouped once before the transaction, the live record in one walk for both
+   groupings (`_claim_groups()`), and source cuts only for the legs' groups present in the live record; same
+   grants (`tests/test_claim_pickups.py`). Peak 5,551 (drone_7) to 2,197 (drone_8, 22 %) (plan, Results,
+   "`claim_pickups` updater step margin" row). The live walk still grows with the record, more slowly.
+   Highest left on 0839: seed_maker `_pick_chunk` ~6,776, automation_1 `_member_rows` 5,074,
+   `machine_activity._classify` ~5,000, `script_census._unique_rows` ~4,220. Not confirmed in game.
+
 Each session: own worktree (`python devtools/agent_worktree.py new <topic>`), one Results row with the same
 save, gate and window as its baseline, `cavecrew-reviewer` before the merge.

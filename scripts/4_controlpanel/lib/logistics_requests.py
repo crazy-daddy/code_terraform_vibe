@@ -425,6 +425,23 @@ def _other_units(pickups, vehicle_name, tick, match):
     return totals
 
 
+def _claim_groups(pickups, vehicle_name, tick, dest_id):
+    """({(source, item_id): units}, {item_id: units towards dest_id}) over fresh entries of
+    OTHER vehicles: both _other_units() groupings claim_pickups() needs, in one walk."""
+    by_source = {}
+    by_dest = {}
+    for entry in pickups.values():
+        if not is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("vehicle") == vehicle_name:
+            continue
+        item_id = entry.get("item_id")
+        units = entry.get("units", 0) or 0
+        group = (entry.get("source"), item_id)
+        by_source[group] = by_source.get(group, 0) + units
+        if entry.get("dest") == dest_id:
+            by_dest[item_id] = by_dest.get(item_id, 0) + units
+    return by_source, by_dest
+
+
 def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
     """
     Atomically reserves a planned trip. `legs` is [(source_id, item_id, units)],
@@ -441,20 +458,22 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
     log.start(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r})", level="debug")
     tick = curr_tick if curr_tick is not None else now_tick()
     granted = []
+    # Grouped outside the transaction: `seen` is a snapshot, and the updater runs as one
+    # pure callback under the step cap, where walking the whole record cost per call.
+    src_before, dest_before = _claim_groups(seen, vehicle_name, tick, dest_outpost_id)
 
     def updater(pickups):
         if not isinstance(pickups, dict):
             pickups = {}
         del granted[:]
-        src_before = _other_units(seen, vehicle_name, tick, "source")
-        src_now = _other_units(pickups, vehicle_name, tick, "source")
-        dest_before = _other_units(seen, vehicle_name, tick, "dest")
-        dest_now = _other_units(pickups, vehicle_name, tick, "dest")
-        dest_cut = {}
-        for (dest, item_id), units in dest_now.items():
-            if dest == dest_outpost_id:
-                dest_cut[item_id] = max(0, units - dest_before.get((dest, item_id), 0))
-        src_cut = {g: max(0, units - src_before.get(g, 0)) for g, units in src_now.items()}
+        src_now, dest_now = _claim_groups(pickups, vehicle_name, tick, dest_outpost_id)
+        dest_cut = {item_id: max(0, units - dest_before.get(item_id, 0)) for item_id, units in dest_now.items()}
+        # Only the legs' groups are ever read; a group with no units now has no cut.
+        src_cut = {}
+        for source_id, item_id, _units in legs:
+            g = (source_id, item_id)
+            if g in src_now:
+                src_cut[g] = max(0, src_now[g] - src_before.get(g, 0))
         for source_id, item_id, units in legs:
             cut_src = src_cut.get((source_id, item_id), 0)
             cut_dest = dest_cut.get(item_id, 0)
