@@ -348,7 +348,7 @@ Archive (one dict per concern):
    refits; drone takeover (`drone_takeover()` turns the drone yield switch on once, never off); Charging
    Station retirement per outpost once the Pioneers are replaced (see "Charging Station everywhere before
    drones" above). Merged `b06144a`.
-   Handoff: [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md).
+   Handoff: [founding_rev3_phase2_handoff.md](done/founding_rev3_phase2_handoff.md).
 
 ## Critical files
 - [autoplay/lib/autoplay_roles.py](autoplay/lib/autoplay_roles.py) — catalog fields, observed/gaps.

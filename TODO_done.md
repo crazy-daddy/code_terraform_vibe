@@ -668,7 +668,8 @@ The game dev says the next build fixes tanks on a shared pipe: a tank fills from
   - [x] Session 1: active-ore latch, Pioneer reach, stationed miner, STOCK floor gate.
   - [x] Session 2: planners off markers, remove marker code, cleanup stage, docs.
 - [ ] **B. Nothing proposes deploying mining Pioneers.** Day 20: deployed by hand (#71).
-- [ ] **C. Mining markers (`resource.*`) aren't set automatically.** Set by hand (#72). Cause: only `mining`-designated outposts get sites. Fix: drop markers; mine on NEED demand plus a latched buffer, sites chosen by miners. Plan + handoff: [resource_markers_removal.md](docs/plans/resource_markers_removal.md).
+- [x] **C. Mining markers (`resource.*`) aren't set automatically.** Set by hand (#72). Cause: only `mining`-designated outposts get sites. Fix: drop markers; mine on NEED demand plus a latched buffer, sites chosen by miners. Plan + handoff: [resource_markers_removal.md](docs/plans/done/resource_markers_removal.md).
+  - [x] Validate live: moved to [live_verification.md](docs/plans/live_verification.md) §2.
 
 ---
 

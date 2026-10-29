@@ -4,8 +4,8 @@ Written 2026-10-22. One manual run that checks the plans whose code is merged an
 
 | Plan | Code state | Checked in |
 |---|---|---|
-| [outpost_founding_planner.md](outpost_founding_planner.md), revision 3 phases 1 and 2 ([impl](founding_rev3_phase2_impl.md)) | Merged `b06144a` | [§3](#3-early-game-founding-planner-revision-3), [§4](#4-mid-game-constructor-base-and-roles), [§5](#5-late-game-drone-takeover) |
-| [resource_markers_removal.md](resource_markers_removal.md) | Sessions 0-2 done | [§2](#2-early-game-before-cartography-markers-removal) |
+| [outpost_founding_planner.md](outpost_founding_planner.md), revision 3 phases 1 and 2 ([impl](done/founding_rev3_phase2_impl.md), moved to done) | Merged `b06144a` | [§3](#3-early-game-founding-planner-revision-3), [§4](#4-mid-game-constructor-base-and-roles), [§5](#5-late-game-drone-takeover) |
+| [resource_markers_removal.md](done/resource_markers_removal.md) (moved to done) | Sessions 0-2 done | [§2](#2-early-game-before-cartography-markers-removal) |
 | [dynamic_roles/](dynamic_roles/README.md), stages 1-3 and mission pool A/B | Merged, headless only | [§4](#4-mid-game-constructor-base-and-roles), [§5](#5-late-game-drone-takeover) |
 
 Markers used below:
@@ -28,6 +28,8 @@ Markers used below:
 
 ## 2. Early game, before Cartography: markers removal
 
+Plan: [resource_markers_removal.md](done/resource_markers_removal.md) ("Verification").
+
 - [ ] A stationed Pioneer mines iron on the first NEED.
 - [ ] `mining.active_ores` grows in the order iron, silicon, titanium.
 - [ ] An ore that is not latched yet gets no STOCK floor. Full slots get no buffer.
@@ -35,6 +37,8 @@ Markers used below:
 - [ ] Dock raw-ore orders are still covered by a mining outpost's dock.
 
 ## 3. Early game: founding planner revision 3
+
+Plan: [outpost_founding_planner.md](outpost_founding_planner.md) "Revision 3"; phase 2: [impl](done/founding_rev3_phase2_impl.md), [handoff](done/founding_rev3_phase2_handoff.md).
 
 - [ ] The first outpost gets the `charging` role and a Charging Station while drone yield is off.
 - [ ] **Geothermal scouting** (least tested part, never run live): `geo-<n>` survey requests appear while the Thermal Cap is still locked. Expect 2, nearest home, at least 600 m apart.

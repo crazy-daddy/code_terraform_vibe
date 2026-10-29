@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python (game interpreter subset), `unittest`, Ruff, Pyright; replay via `devtools/simulation/planner_replay.py`.
 
-**Spec:** [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md) and [outpost_founding_planner.md](outpost_founding_planner.md) "Revision 3" (decisions B, C).
+**Spec:** [founding_rev3_phase2_handoff.md](founding_rev3_phase2_handoff.md) and [outpost_founding_planner.md](../outpost_founding_planner.md) "Revision 3" (decisions B, C).
 
 ## Global Constraints
 
