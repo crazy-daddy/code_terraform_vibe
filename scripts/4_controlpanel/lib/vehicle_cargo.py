@@ -19,7 +19,7 @@ import logistics_requests
 import pump_salt
 from game_rules import RAW_ORE_ITEM_IDS
 from pull_plan import PULL_MIN_LEG_THROTTLE
-from storage import INVENTORY_FREE_SLOTS_KEEP, inventory_room, inventory_stack_size, outpost_is_home
+from storage import INVENTORY_FREE_SLOTS_KEEP, inventory_room, inventory_stack_size, must_stay_in_inventory, outpost_is_home
 from storage_take import take_item
 from storage_unload import best_unload_target, send_stack, top_up_bin
 from swallow import swallowed
@@ -154,8 +154,11 @@ class VehicleCargoMixin:
         short = False
         if target is None and outpost_is_home(target_outpost):
             # No store takes the whole stack: what fits in Inventory
-            # above its free-slot reserve, the rest stays aboard.
-            room = min(count, inventory_room(item_id))
+            # above its free-slot reserve, the rest stays aboard. A kit or
+            # module (must_stay_in_inventory()) may fill the reserve: aboard,
+            # it blocks the vehicle and never reaches its deploy.
+            keep = 0 if must_stay_in_inventory(item_id) else INVENTORY_FREE_SLOTS_KEEP
+            room = min(count, inventory_room(item_id, keep=keep))
             if room > 0:
                 target, count, short = "inventory", room, True
         if target is None:
