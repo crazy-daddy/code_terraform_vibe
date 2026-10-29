@@ -32,6 +32,19 @@ Python scripts for the game Code: Terraform, running on the planet Nocturna. Thi
 - Caveats (RUF100, Markdown, stale resolved copies): [CODE_GUIDES.md#checks](CODE_GUIDES.md#checks).
 - Before a large commit, run `caveman:cavecrew-reviewer` and fix its findings. Rerun it only if the fixes were substantial; the commit need not be 100 % clean.
 
+## Tests
+Project specifics for the global test rules. Suite mechanics and fakes: [CODE_GUIDES.md#tests](CODE_GUIDES.md#tests), [stub_tests.md §10](docs/cheatsheet/stub_tests.md).
+- Flows (one realistic test each, over `tests/sample_world.py` or a replayed save snapshot, with `tests/game_spec.json` defaults):
+  - Deploy: `scripts_sync.py` push/watch into a save: lib apply order, importer restart, nothing lost or stale in the save's slots and `lib/`. Always a temp save folder, never the real one.
+  - Production: recipe and Earth-order deficits drive Smelters, Fabricators and Supply Docks; no overproduction when stock or storage is full.
+  - Hauling: a Drone/Pioneer job runs pick, trip, unload and returns home through `run_job_loop()`, with claims and energy budget in play.
+  - Power: grid shortfall sheds load by tier and restores it.
+  - Autoplay planning: `planner_loop` turns a world into placed blueprints without overlaps or unbuildable sites.
+- Critical modules (rules and guards tested at their exact limits; mutation testing, if used, only here): `lib/power.py` (shed tiers and thresholds), `lib/vehicle_energy.py` (there-and-back budget, emergency-reserve floor), `lib/vehicle_claims.py` (atomic reservation, heartbeat renewal, timeout expiry), `lib/vehicle_navigation.py` (deadlock and stall detection), `lib/priority.py` (one demand ladder), `lib/production_source.py` (`SourceCache` netting: moving a unit between storage and a machine never changes a target), `devtools/scripts_sync.py` (the only writer into a save).
+- Limits worth a boundary test: each constant's cheatsheet value (test at, just below and just above it), the 10,000-step cap per `lib/atomic.py` callback, stale-message age on the Signal Bus, empty or missing archive keys, a `Result` failure status from any game call.
+- Game-interpreter guards (`test_game_imports`, `test_game_syntax`, `test_game_builtins`, `test_log_blocks_balanced`, `test_reset_in_run_loops`, `test_stub_contract`, `test_docs_lint`) are static scans, not flow tests. Keep them; extend them when a new in-game failure class appears.
+- Time budget: the full offline suite stays under 2 min (about 100 s at 2,610 tests, 2026-10). The headless sim (`devtools/simulation/headless/`) is not part of it.
+
 ## Working style
 - Don't remind the user to deploy, sync or apply libs after edits. The watcher or the user handles it.
 - Keep context small: every tool result is re-sent on each later turn.
