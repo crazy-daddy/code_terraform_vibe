@@ -134,11 +134,14 @@ class MainAutoplayTest(unittest.TestCase):
                 save_scripts.main()
             self.assertEqual(hashlib.sha256(save.read_bytes()).hexdigest(), before, "save file changed")
             outdir = root / "out"
-            files = {
-                p.relative_to(outdir).as_posix(): p.read_text(encoding="utf-8")
-                for p in outdir.rglob("*")
-                if p.is_file()
-            }
+            # Read slot scripts and the strip manifest; the ~200 staged lib copies only by name (reading them all
+            # cost about a second per call on Windows).
+            manifest = "lib/" + save_scripts.STRIP_MANIFEST
+            files = {}
+            for p in outdir.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(outdir).as_posix()
+                    files[rel] = p.read_text(encoding="utf-8") if "/" not in rel or rel == manifest else ""
             return err.getvalue(), files
 
     def test_warns_without_flag(self):
