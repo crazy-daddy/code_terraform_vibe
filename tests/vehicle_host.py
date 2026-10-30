@@ -40,10 +40,12 @@ class ScriptedNav:
         return ((self.x - x) ** 2 + (self.y - y) ** 2) ** 0.5
 
 
-def make_vehicle(world, battery_wh=1000.0, cargo_capacity=100, nav=None) -> tuple[VehicleController, Pioneer]:
+def make_vehicle(
+    world, battery_wh=1000.0, cargo_capacity=100, nav=None, pioneer_id="pioneer_1"
+) -> tuple[VehicleController, Pioneer]:
     """A VehicleController built by its real __init__ over a home-based stub Pioneer (returned too)."""
     pioneer = world.add_pioneer(
-        "pioneer_1", battery_wh=battery_wh, battery_capacity=max(battery_wh, 1.0), cargo_capacity=cargo_capacity
+        pioneer_id, battery_wh=battery_wh, battery_capacity=max(battery_wh, 1.0), cargo_capacity=cargo_capacity
     )
     pioneer.nav = nav or ScriptedNav()
     return VehicleController(pioneer), pioneer  # type: ignore[arg-type]  # stub Pioneer stands in for the game's
