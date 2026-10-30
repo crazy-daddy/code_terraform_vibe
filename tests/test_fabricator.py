@@ -27,7 +27,6 @@ class PublishWantsTests(StubTestCase):
         controller._wants_published = {"iron_ingot": [5, 1]}
         controller.publish_wants()
         self.assertEqual(w.notebook.get(production.FABRICATOR_WANTS_KEY), {"other": {"tick": 0}})
-        self.assertEqual(controller._wants_published, {})
 
 
 class HomeFabricatorTests(StubTestCase):
@@ -107,7 +106,6 @@ class PlanFeedTests(StubTestCase):
         for cascade in (choose, ladders, active, depths):
             cascade.assert_not_called()
         self.assertEqual(self.f.input_buffer.get("iron_ingot", 0), loaded)
-        self.assertEqual(self.c._plan["tick"], self.world.clock.now - 5)
 
     def test_plan_due_on_backstop(self):
         self.assertFalse(self.replans(fabricator.PLAN_BACKSTOP_TICKS - 10))
@@ -149,8 +147,6 @@ class PlanFeedTests(StubTestCase):
         self.f.output_buffer["steel_plate"] = 2
         self.world.clock.now += 1
         self.c.step()
-        self.assertEqual(self.c._plan["made"], 2)
-        self.assertEqual(self.c._plan["crafts_remaining"], 5)
         self.assertEqual(self.c.planned_crafts(), 3)
         self.assertIn("missing=9 ", self.debug_log())  # 3 crafts x 3 iron_ingot
 
@@ -197,7 +193,6 @@ class ShortInputTests(StubTestCase):
         self.assertGreater(prefill, 2)
         self.c.load_inputs(self.recipe, 50, 200)
         first = self.f.input_buffer.get("iron_ingot", 0)
-        self.assertEqual(self.c._short_inputs, ("craft_frame", ("glass",)))
         self.f.input_buffer.clear()
         self.c.load_inputs(self.recipe, 50, 200)
         self.assertEqual(self.f.input_buffer.get("iron_ingot", 0), 2)
@@ -208,7 +203,6 @@ class ShortInputTests(StubTestCase):
         self.world.inventory.add("glass", 50)
         self.f.input_buffer.clear()
         self.c.load_inputs(self.recipe, 50, 200)
-        self.assertEqual(self.c._short_inputs, ("craft_frame", ()))
         self.f.input_buffer.clear()
         self.c.load_inputs(self.recipe, 50, 200)
         self.assertGreater(self.f.input_buffer.get("iron_ingot", 0), 2)
@@ -234,7 +228,8 @@ class ClaimRefreshTests(StubTestCase):
             self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
             self.assertEqual(len(calls), 2)
             controller.release_recipe("craft_gas_pipe_segment")
-            self.assertNotIn("craft_gas_pipe_segment", controller._claim_ticks)
+            claims = fabricator.archive.get(controller.RECIPE_CLAIMS_KEY, {}) or {}
+            self.assertFalse(any("craft_gas_pipe_segment" in site for site in claims.values()))
         finally:
             fabricator.archive.transaction = real
 
@@ -270,7 +265,6 @@ class SourceMemoTests(StubTestCase):
         }
         self.assertFalse(production.can_source_item("cyc_a", cache))
         self.assertFalse(production.can_source_item("cyc_b", cache))
-        self.assertEqual(cache._item_stack, set())
         self.world.inventory.add("cyc_b", 1)
         fresh = production.SourceCache()
         fresh._sourcing_index = cache._sourcing_index

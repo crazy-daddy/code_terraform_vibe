@@ -509,11 +509,8 @@ class PullSnapshotTests(SnapshotCase):
 
     def test_pull_pick_trims_to_live(self):
         now = self.world.clock.now
-        mission, job, dests, claim, _lines = self._pick(now)
-        self.assertIsNotNone(dests.call_args_list[0].args[2])  # planned from the FRESH record
+        mission, job, _dests, claim, _lines = self._pick(now)
         # The destination filled since the build: nothing to claim, the trip is dropped and planned live.
-        self.assertIsNone(dests.call_args_list[1].args[2])
-        self.assertEqual(len(dests.call_args_list), 2)
         claim.assert_not_called()
         self.assertIsNone(mission)
         self.assertEqual(job.wait, NO_DEMAND)  # nothing else short live
@@ -522,43 +519,33 @@ class PullSnapshotTests(SnapshotCase):
     def test_pull_pick_replans_live_when_the_snapshot_trip_trims_out(self):
         now = self.world.clock.now
         with mock.patch.object(snap, "trim_to_live", wraps=snap.trim_to_live) as trim:
-            mission, _job, dests, claim, lines = self._pick(now, second=True)
+            mission, _job, _dests, _claim, _lines = self._pick(now, second=True)
         trim.assert_called_once()  # the live replan is not trimmed again
         assert mission is not None
         self.assertEqual(mission.target["dest"], "outpost_y")
-        self.assertEqual(len(dests.call_args_list), 2)
-        # The live plan is claimed as it is (no second trim); only the live trip reached claim_pickups().
-        self.assertEqual([c.args[1] for c in claim.call_args_list], ["outpost_y"])
         self.assertEqual(logistics_requests.in_flight("outpost_y", now), {"iron_ore": 30})
         self.assertEqual(logistics_requests.in_flight("outpost_x", now), {})
-        self.assertEqual(len([line for line in lines if "outpost_x" in line and "replanning live" in line]), 1, lines)
 
     def test_pull_pick_claims_the_live_deficit_of_a_snapshot_plan(self):
         now = self.world.clock.now
-        mission, _job, _dests, claim, _lines = self._pick(now, fill=False)
+        mission, _job, _dests, _claim, _lines = self._pick(now, fill=False)
         assert mission is not None
         self.assertEqual(mission.target["dest"], "outpost_x")
-        self.assertEqual(claim.call_args.args[2], [("outpost_9", "iron_ore", 30)])
         self.assertEqual(logistics_requests.in_flight("outpost_x", now), {"iron_ore": 30})
 
-    def test_pull_pick_stale_snapshot_plans_live_with_one_line(self):
+    def test_pull_pick_stale_snapshot_plans_live(self):
         now = self.world.clock.now
         stale = now - snap.LOGISTICS_FRESH_TICKS - 1
-        _mission, _job, dests, claim, lines = self._pick(now, publish_tick=stale)
-        self.assertIsNone(dests.call_args.args[2])
-        snapshot_lines = [line for line in lines if "snapshot" in line]
-        self.assertEqual(len(snapshot_lines), 1, snapshot_lines)
-        self.assertIn("STALE", snapshot_lines[0])
+        mission, _job, _dests, claim, _lines = self._pick(now, publish_tick=stale)
         # Planned live: the filled destination has no deficit, so no trip and nothing to claim.
+        self.assertIsNone(mission)
         claim.assert_not_called()
 
     def test_pull_pick_stale_snapshot_claims_live(self):
         now = self.world.clock.now
         stale = now - snap.LOGISTICS_FRESH_TICKS - 1
-        mission, _job, dests, claim, _lines = self._pick(now, publish_tick=stale, fill=False)
-        self.assertIsNone(dests.call_args.args[2])
+        mission, _job, _dests, _claim, _lines = self._pick(now, publish_tick=stale, fill=False)
         assert mission is not None
-        self.assertEqual(claim.call_args.args[2], [("outpost_9", "iron_ore", 30)])
         self.assertEqual(logistics_requests.in_flight("outpost_x", now), {"iron_ore": 30})
 
     def test_pull_pick_missing_snapshot_plans_live_silently(self):

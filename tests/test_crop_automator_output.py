@@ -30,13 +30,18 @@ class HarvestBudgetTests(StubTestCase):
         self.assertEqual(self.ctrl.harvest_budget()[0], 2)
 
     def test_yield_follows_largest_recent_harvest_and_decays(self):
+        def harvests_that_fit(per_harvest):
+            harvests, free = self.ctrl.harvest_budget()
+            self.assertGreater(free, 0)
+            self.assertEqual(harvests, free // per_harvest)
+
         self.ctrl.learn_yield(1800)
-        self.assertEqual(self.ctrl._harvest_yield, 1800)
+        harvests_that_fit(1800)
         self.ctrl.learn_yield(900)
-        self.assertEqual(self.ctrl._harvest_yield, int(1800 * crop_automator.HARVEST_YIELD_DECAY))
+        harvests_that_fit(int(1800 * crop_automator.HARVEST_YIELD_DECAY))
         for _ in range(100):
             self.ctrl.learn_yield(900)
-        self.assertEqual(self.ctrl._harvest_yield, 900)
+        harvests_that_fit(900)
 
     def test_harvests_beyond_budget_are_canceled_newest_first(self):
         self.machine.jobs = [

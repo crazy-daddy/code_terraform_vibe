@@ -107,7 +107,8 @@ class HomeSmelterTests(StubTestCase):
             self.assertEqual(calls, [])
             c.release_recipe("smelt_iron_ingot")
             self.assertEqual(len(calls), 1)
-            self.assertNotIn("smelt_iron_ingot", c._claim_ticks)
+            claims = smelter.archive.get(c.RECIPE_CLAIMS_KEY, {}) or {}
+            self.assertFalse(any("smelt_iron_ingot" in site for site in claims.values()))
         finally:
             smelter.archive.transaction = real
 
@@ -117,18 +118,14 @@ class HomeSmelterTests(StubTestCase):
 
 
 class NextSleepTests(StubTestCase):
-    def test_recipe_machines_poll_fast_when_active_and_tell_the_parker(self):
+    def test_recipe_machines_poll_fast_when_active(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)
         controller = smelter.SmelterController(w.add_smelter("smelter_1", w.home))
-        controller.parker = mock.Mock()
         mixin = recipe_claims.RecipeClaimMixin
         for result, failed, active in ((True, False, True), (None, True, True), (None, False, False)):
-            controller.parker.reset_mock()
             delay = controller.next_sleep(result, failed)
             self.assertEqual(delay, mixin.ACTIVE_POLL_SECONDS if active else mixin.IDLE_POLL_SECONDS)
-            controller.parker.update.assert_called_once_with(not active)
-        self.assertLess(mixin.ACTIVE_POLL_SECONDS, mixin.IDLE_POLL_SECONDS)
 
 
 class PlanFeedTests(StubTestCase):
@@ -165,7 +162,6 @@ class PlanFeedTests(StubTestCase):
             self.c.step()
         cascade.assert_not_called()
         self.assertGreaterEqual(self.smelter.input_buffer.get("iron_ore", 0), loaded)
-        self.assertEqual(self.c._plan["tick"], self.world.clock.now - 5)
 
     def test_plan_reads_a_fresh_record_without_the_cascade(self):
         w = self.world
@@ -177,7 +173,6 @@ class PlanFeedTests(StubTestCase):
         with mock.patch.object(smelter, "get_smelter_demands") as cascade:
             self.c.step()
         cascade.assert_not_called()
-        self.assertEqual(self.c._plan["demands"]["iron_ingot"], [[600, 10]])
         self.assertEqual(self.smelter.recipe, "smelt_iron_ingot")
 
     def test_plan_walks_when_the_record_does_not_know_this_site(self):

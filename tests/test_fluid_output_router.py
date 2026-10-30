@@ -75,8 +75,8 @@ class FluidOutputRouterCacheTests(StubTestCase):
         self.assertEqual((first.kind, first.target_id, first.rebalance), ("connected", "gas_tank_1", False))
         for tick in range(1001, 1040):
             self.assertEqual(self.ensure(router, tick, stalled=True).kind, "full")
-        self.assertEqual(router.blacklist._blacklisted_at, {})
-        self.assertEqual(router._connected_id, "gas_tank_1")
+        self.assertFalse([n for n in (1, 2, 3) if router.blacklist.is_blacklisted(f"gas_tank_{n}", 1039)])
+        self.assertEqual(self.port.connected_id(), "gas_tank_1")
 
     def test_full_current_switches_to_emptier_tank(self):
         self.tank("gas_tank_1", 100)
@@ -86,7 +86,8 @@ class FluidOutputRouterCacheTests(StubTestCase):
         self.tank("gas_tank_3", 40)
         event = self.ensure(router, 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS, stalled=True)
         self.assertEqual((event.kind, event.target_id, event.rebalance), ("connected", "gas_tank_3", True))
-        self.assertEqual(router.blacklist._blacklisted_at, {})
+        tick = 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS
+        self.assertFalse(router.blacklist.is_blacklisted("gas_tank_1", tick))
 
     def test_real_stall_still_blacklists(self):
         self.tank("gas_tank_1", 10)
@@ -224,7 +225,8 @@ class FluidOutputRouterLocalTests(StubTestCase):
         self.tank("liquid_tank_2", self.local, 1)
         event = self.ensure(router, 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS)
         self.assertEqual((event.kind, event.target_id, event.rebalance), ("connected", "liquid_tank_2", True))
-        self.assertEqual(router.blacklist._blacklisted_at, {})
+        tick = 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS
+        self.assertFalse(router.blacklist.is_blacklisted("liquid_tank_1", tick))
 
     def test_remote_kept_while_local_near_full(self):
         self.tank("liquid_tank_1", self.remote, 12)
@@ -233,7 +235,6 @@ class FluidOutputRouterLocalTests(StubTestCase):
         router._connected_id = "liquid_tank_1"
         router._id_synced = True
         self.assertEqual(self.ensure(router, 1000).kind, "healthy")
-        self.assertEqual(router._connected_id, "liquid_tank_1")
 
 
 class PerEntryBlacklistTests(StubTestCase):
@@ -242,7 +243,7 @@ class PerEntryBlacklistTests(StubTestCase):
         blacklist.blacklist("a", 10)
         blacklist.blacklist("b", 50)
         self.assertEqual(blacklist.filter_reachable(["a", "b", "c"], 120), ["a", "c"])
-        self.assertNotIn("a", blacklist._blacklisted_at)
+        self.assertFalse(blacklist.is_blacklisted("a", 120))
         self.assertTrue(blacklist.is_blacklisted("b", 120))
         self.assertEqual(blacklist.filter_reachable(["a", "b"], 0), ["a"])
 

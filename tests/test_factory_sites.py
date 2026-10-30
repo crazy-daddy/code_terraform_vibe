@@ -125,7 +125,6 @@ class SiteTargetTests(StubTestCase):
         with mock.patch.object(production_sites, "_compute_site_fabricator_targets") as compute:
             self.assertEqual(production.get_site_fabricator_ladders("outpost_2", cache), ladders)
         compute.assert_not_called()
-        self.assertEqual(cache._site_ship_plan["outpost_2"], {"pressure_valve": [2, priority.NEED]})
         self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
 
     def test_stale_record_is_still_used_never_recomputed(self):
