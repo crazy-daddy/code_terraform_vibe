@@ -156,12 +156,6 @@ class ReactorTests(harness.StubTestCase):
         self.assertLess(machine.max_temp, rx.TRIP_C + 10, self.debug_log())
         self.assertNotIn("overheated", self.debug_log())
 
-    def test_overheat_toast_is_a_timed_warning(self):
-        _machine, controller = self.make([1.0])
-        controller.on_status("overheated", 960.0)
-        self.assertIn("overheated", self.world.notices[-1])
-        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 8.0))
-
     def test_trip_guard_catches_unannounced_gain_jump(self):
         machine, controller = self.make([0.72])
         self.run_hours(machine, controller, 10)

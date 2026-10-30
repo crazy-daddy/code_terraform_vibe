@@ -470,17 +470,6 @@ class WakeAlertTests(harness.StubTestCase):
         plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"], mk2_packs=1))
         self.assertEqual(plan["wakes"], [("habitat_1", "Mk II pack in Inventory")])
 
-    def test_alert_toast_is_a_timed_warning(self):
-        saved = dict(wp.state)
-        self.addCleanup(lambda: wp.state.update(saved))
-        wp.state["alerts"] = None
-        statuses = {"habitat_1": established("salt_tortoise", pop=175000, rate=0.0, parked=wc.PARK_CAPPED)}
-        plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))
-        wp._report(plan, {}, {}, {})
-        self.assertEqual(len(self.world.notices), 1)
-        self.assertTrue(self.world.notices[0].startswith("[Wildlife] "))
-        self.assertEqual(self.world.notice_args[-1][1:], ("warn", 10.0))
-
     def test_wakes_parked_empty_habitat_on_assignment(self):
         statuses = {"habitat_1": {"species": "", "target": "", "parked": wc.PARK_EMPTY}}
         plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))

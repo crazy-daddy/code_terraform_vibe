@@ -49,6 +49,15 @@ def _install_builtins(world):
     builtins.sleep = lambda _seconds: None  # type: ignore[attr-defined]
 
     def notify(text, level="info", duration_seconds=None, dismissible=True):
+        # The game raises on these (evaluator notify builtin); our calls have no guard.
+        if level not in ("info", "warn", "error"):
+            raise ValueError(f"notify() level must be info, warn or error, got {level!r}")
+        if duration_seconds is not None and (
+            isinstance(duration_seconds, bool) or not isinstance(duration_seconds, (int, float))
+        ):
+            raise TypeError("notify() duration_seconds must be a number")
+        if not isinstance(dismissible, bool):
+            raise TypeError("notify() dismissible must be True or False")
         world.notices.append(text)
         world.notice_args.append((text, level, duration_seconds))
 
