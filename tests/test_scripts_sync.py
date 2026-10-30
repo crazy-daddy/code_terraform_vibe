@@ -214,6 +214,7 @@ class _SyncTest(unittest.TestCase):
                 "APPLY_PICKUP_TIMEOUT_S",
                 "APPLY_CONFIRM_TIMEOUT_S",
                 "RECOVER_POLL_S",
+                "STRAGGLER_SETTLE_S",
             )
         }
         ss.SYNC_LOG = self.tmp / "sync.log"
@@ -222,6 +223,7 @@ class _SyncTest(unittest.TestCase):
         ss.APPLY_PICKUP_TIMEOUT_S = 0.0
         ss.APPLY_CONFIRM_TIMEOUT_S = 0.0
         ss.RECOVER_POLL_S = 0.01
+        ss.STRAGGLER_SETTLE_S = 0.0
         for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES, ss._CONSTRUCTION_WAIT):
             state.clear()
         for state in (
