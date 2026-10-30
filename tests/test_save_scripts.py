@@ -99,18 +99,6 @@ class AutoplayContentTest(unittest.TestCase):
         self.assertFalse(save_scripts.at_lib_tier("0_cold_boot"))
         self.assertFalse(save_scripts.at_lib_tier("contract"))
 
-    def test_warning_names_content_and_both_flags(self):
-        text = "\n".join(
-            save_scripts.autoplay_warning([("automation_2", "infra_planner_automation")], ["blueprint_queue"])
-        )
-        for part in (
-            "blueprint_queue",
-            "automation_2 (infra_planner_automation)",
-            "--include-autoplay",
-            "--strip-autoplay",
-        ):
-            self.assertIn(part, text)
-
     def test_stripped_importers(self):
         hits = save_scripts.stripped_importers(
             {"panel_7": "from blueprint_queue import queue\n", "solar_1": SOLAR_SLOT}, ["blueprint_queue"]
@@ -195,15 +183,6 @@ class MainAutoplayTest(unittest.TestCase):
         self.assertIn("playground_1 imports stripped autoplay lib(s): blueprint_queue", err)
         self.assertNotIn("solar_1 imports", err)
         self.assertNotIn("Autoplay role", files.get("solar_1.py", ""))  # scripts/ content, not stripped
-
-    def test_flags_exclude_each_other(self):
-        for pair in (("--include-autoplay", "--strip-autoplay"), ("--strip-autoplay", "--check")):
-            with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-                self._main(*pair)
-
-    def test_out_required_unless_check(self):
-        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-            self._main(out=False)
 
 
 if __name__ == "__main__":

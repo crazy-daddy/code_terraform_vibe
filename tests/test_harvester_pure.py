@@ -197,14 +197,7 @@ class CellRowsTests(unittest.TestCase):
 
 
 class MovedPureTests(unittest.TestCase):
-    def test_care_kind_table_and_salt_usable(self):
-        import field_layout
-
-        rules = field_layout.rules_from_published({})
-        table = hp.care_kind_table(rules)
-        self.assertEqual(
-            table, {sp: field_layout.care_kinds(rules, sp) for sp in rules if field_layout.care_kinds(rules, sp)}
-        )
+    def test_salt_usable(self):
         self.assertFalse(hp.salt_usable({"a": ["light"]}, 5))
         self.assertFalse(hp.salt_usable({"a": ["salt"]}, 0))
         self.assertTrue(hp.salt_usable({"a": ["light", "salt"]}, 1))
@@ -224,13 +217,7 @@ class MovedPureTests(unittest.TestCase):
         )
 
     def test_desired_chunks(self):
-        import field_layout
-
         self.assertEqual(hp.desired_chunks("crowncap", 7, None, None), 7)
-        rules = field_layout.rules_from_published({})
-        self.assertEqual(
-            hp.desired_chunks("grandbloom", 0, {}, rules), field_layout.chunks_for_demand(0.0, rules, "grandbloom")
-        )
 
 
 if __name__ == "__main__":

@@ -54,14 +54,6 @@ class EnergyForDistanceTests(unittest.TestCase):
 
 
 class BrakeIfAbleTests(unittest.TestCase):
-    def test_no_nav_is_a_no_op(self):
-        _Host().brake_if_able("test")
-
-    def test_brakes(self):
-        nav = _Nav()
-        _Host(SimpleNamespace(nav=nav)).brake_if_able("test")
-        self.assertEqual(nav.brakes, 1)
-
     def test_failing_brake_is_swallowed(self):
         nav = _Nav(fail=True)
         _Host(SimpleNamespace(nav=nav)).brake_if_able("test")

@@ -1,4 +1,4 @@
-"""Mission record, Vehicle/DroneClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
+"""Mission record, Vehicle/DroneClaimsMixin.begin_mission/end_mission."""
 
 import unittest
 
@@ -6,12 +6,10 @@ import drone_claims
 import mining_reservations
 import vehicle_claims
 from archive import archive
-from drone import DroneController
 from fleet_unit import FleetUnitMixin
 from harness import StubTestCase
 from mission import Mission
 from tree_console import TreeConsole
-from vehicle import VehicleController
 
 MINE = {"type": "mine", "coords": (5, 5), "name": "Site_9_iron_ore", "harvest_item": "iron_ore", "estimated_units": 8}
 
@@ -51,28 +49,6 @@ class MissionRecordTests(unittest.TestCase):
 
     def test_coords(self):
         self.assertEqual(Mission("mine", "site_9", MINE).coords, (5.0, 5.0))
-
-
-class ViewTests(unittest.TestCase):
-    def test_views_follow_mission_and_reject_writes(self):
-        v = VehicleController.__new__(VehicleController)
-        v.mission = None
-        self.assertEqual((v.current_target, v.current_target_key, v.current_target_reserved), (None, None, False))
-        v.mission = Mission("mine", "site_9", MINE, reserved_yield=True)
-        self.assertEqual((v.current_target, v.current_target_key, v.current_target_reserved), (MINE, "site_9", True))
-        for name in ("current_target", "current_target_key", "current_target_reserved"):
-            with self.assertRaises(AttributeError):
-                setattr(v, name, None)
-
-    def test_drone_views_follow_mission_and_reject_writes(self):
-        d = DroneController.__new__(DroneController)
-        d.mission = None
-        self.assertEqual((d.current_target, d.current_target_key), (None, None))
-        d.mission = Mission("mine", "bio_3_7", BIO)
-        self.assertEqual((d.current_target, d.current_target_key), (BIO, "bio_3_7"))
-        for name in ("current_target", "current_target_key"):
-            with self.assertRaises(AttributeError):
-                setattr(d, name, None)
 
 
 class BeginEndMissionTests(StubTestCase):

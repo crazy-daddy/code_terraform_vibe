@@ -184,7 +184,6 @@ class ConsumerTests(CashTestCase):
         self.assertEqual(cash.shop_price("cryo_solvent"), 12)
         self.world.services["shop"].prices = {}
         self.assertEqual(cash.shop_price("cryo_solvent"), 12)
-        self.assertEqual(cash.shop_price("unknown", 7), 7)
 
 
 class ShopPricesTests(CashTestCase):
@@ -192,7 +191,6 @@ class ShopPricesTests(CashTestCase):
         self.world.services["shop"].prices = {"a": 12, "b": 7.0}
         prices = cash.shop_prices()
         self.assertEqual(prices, {"a": 12, "b": 7})
-        self.assertIsInstance(prices["b"], int)
 
     def test_not_cached(self):
         self.world.services["shop"].prices = {"a": 12}

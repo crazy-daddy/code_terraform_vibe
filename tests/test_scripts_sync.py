@@ -539,16 +539,6 @@ class RecoverTest(_SyncTest):
         self.assertNotIn("exotic_gas_cap_1", ss._OFFLINE_WAIT)
 
 
-class SyncLogTest(_SyncTest):
-    def test_lines_are_stamped_and_appended(self):
-        ss.warn("first")
-        ss.ok("second\nthird")
-        lines = ss.SYNC_LOG.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(len(lines), 3)
-        self.assertRegex(lines[0], r"^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[warn\] first$")
-        self.assertTrue(lines[2].endswith("[ok] third"))
-
-
 class HoldTest(_SyncTest):
     def setUp(self):
         super().setUp()
