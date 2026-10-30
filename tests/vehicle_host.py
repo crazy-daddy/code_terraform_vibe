@@ -10,17 +10,13 @@ from vehicle import VehicleController
 
 
 class ScriptedNav:
-    """Pioneer NavModule at (x, y); advance() moves it `step` metres along +x (a test calls it per drive poll)."""
+    """Pioneer NavModule standing at (x, y); a test moves it by setting x/y. Records throttles and brakes."""
 
-    def __init__(self, x=0.0, y=0.0, step=0.0):
+    def __init__(self, x=0.0, y=0.0):
         self.x = x
         self.y = y
-        self.step = step
         self.throttles = []
         self.brakes = 0
-
-    def advance(self):
-        self.x += self.step
 
     def get_position(self):
         return Position(self.x, self.y)

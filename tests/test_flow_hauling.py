@@ -19,7 +19,7 @@ from harness import StubTestCase, request  # first: puts the script libs on sys.
 # isort: split
 import fleet_unit
 import logistics_requests
-from game_stubs import Pioneer, Position, Result, Slot
+from game_stubs import Pioneer, Position, Result, Slot, VehicleBattery
 from job_pull import PullJob
 from vehicle import VehicleController
 
@@ -39,6 +39,11 @@ class _Stuck(BaseException):
 
 MAX_SLEEPS = 5000
 CHARGE_WH_PER_S = 50.0
+
+
+def _set_wh(pioneer, wh):
+    """Sets the charge the way the game shows a new level: a fresh Battery reading."""
+    pioneer.battery = VehicleBattery(pioneer.battery.capacity(), wh)
 
 
 class _CargoPioneer(Pioneer):
@@ -92,7 +97,7 @@ class _DrivingNav:
                 p.x += (tx - p.x) * step / gap
                 p.y += (ty - p.y) * step / gap
                 rate = self.ctl.wh_per_meter_at_throttle(self.throttle, cargo_units=p.cargo.count())
-                p.battery._wh = max(0.0, p.battery._wh - step * rate)
+                _set_wh(p, max(0.0, p.battery.wh() - step * rate))
             near = [o for o in self.outposts if ((o.x - p.x) ** 2 + (o.y - p.y) ** 2) ** 0.5 <= 3.0]
             p.outpost = near[0] if near else None
             self.on_poll()
@@ -142,7 +147,7 @@ class HaulingFlowTest(StubTestCase):
                 raise _Stuck
             p = self.pioneer
             if p.outpost is not None and self.pioneer.nav.throttle == 0:  # type: ignore[attr-defined]
-                p.battery._wh = min(p.battery.capacity(), p.battery._wh + CHARGE_WH_PER_S * seconds)
+                _set_wh(p, min(p.battery.capacity(), p.battery.wh() + CHARGE_WH_PER_S * seconds))
 
         with (
             mock.patch.object(fleet_unit, "validate_game_version", lambda: None),
@@ -175,10 +180,15 @@ class HaulingFlowTest(StubTestCase):
 
     def test_short_battery_never_drives_below_the_emergency_reserve(self):
         # 20 Wh above the reserve: the 1,200 m trip needs about 30.
-        self.pioneer.battery._wh = self.ctl.MIN_EMERGENCY_RESERVE_WH + 20.0
+        start_wh = self.ctl.MIN_EMERGENCY_RESERVE_WH + 20.0
+        _set_wh(self.pioneer, start_wh)
         self.run_cycles(1)
         self.assertGreaterEqual(min(wh for _x, wh, _claim in self.polls), self.ctl.MIN_EMERGENCY_RESERVE_WH)
-        # It charged first, then made the same delivery.
+        # It charged before the pull leg: by the time it reached the source it
+        # held more than it started with (it parks at a charger first).
+        at_source = next(wh for x, wh, _claim in self.polls if x <= SOURCE[1] + 3.0)
+        self.assertGreater(at_source, start_wh)
+        # Then it made the same delivery.
         self.assertEqual(self.dest_store.items.get(ORE, 0), 40)
         self.assertIsNone(logistics_requests.pickup_dest(self.ctl.name))
         self.assertTrue(self.ctl.is_at_base())

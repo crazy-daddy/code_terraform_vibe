@@ -11,6 +11,7 @@ code, libs apply imported-first, and every importer's last start ran
 against the fully applied lib set.
 """
 
+import re
 import shutil
 import tempfile
 import unittest
@@ -37,6 +38,22 @@ PASS_2 = {
     f"{LIB_TIER}/lib/top.py": "from middle import MIDDLE\nTOP = MIDDLE\n",
 }
 
+_IMPORT = re.compile(r"^\s*(?:from\s+(\w+)\s+import|import\s+(\w+))", re.MULTILINE)
+
+
+def _reached_libs(source, lib_dir):
+    """Lib keys `source` imports, transitively, from the files in lib_dir. A plain
+    import scan of its own, so the oracle does not share scripts_sync's resolver."""
+    seen, todo = set(), [source]
+    while todo:
+        for match in _IMPORT.finditer(todo.pop()):
+            key = match.group(1) or match.group(2)
+            path = lib_dir / f"{key}.py"
+            if key not in seen and path.is_file():
+                seen.add(key)
+                todo.append(path.read_text(encoding="utf-8"))
+    return seen
+
 
 class _FileWatchingGame(_FakeGame):
     """_FakeGame whose Library and slot sources follow the save's files (the
@@ -45,7 +62,7 @@ class _FileWatchingGame(_FakeGame):
 
     def __init__(self, root: Path):
         super().__init__(root)
-        shutil.rmtree(self.src)
+        self.src.rmdir()  # the base's empty stand-in source dir: unused here
         self.src = self.save / "lib"  # libs resolve against the save's own lib/
         self.starts: dict = {}
 
@@ -67,7 +84,7 @@ class _FileWatchingGame(_FakeGame):
     def _bump(self, stem):
         self.pickup()
         super()._bump(stem)
-        reached = ss.libs_reached(self.scripts[stem]["source"], self.opts())
+        reached = _reached_libs(self.scripts[stem]["source"], self.src)
         current = all(
             self.libraries[k]["deployedSource"] == (self.src / f"{k}.py").read_text(encoding="utf-8") for k in reached
         )
@@ -190,11 +207,8 @@ class DeployFlowTest(_SyncTest):
         self.assertIn("top", applied)
         # At the lib tier a dropped module stays in lib/ (the game may still list
         # it as a Library), but no slot in the save reaches it any more.
-        opts = ss.Options(self.game.save, self.scripts)
-        opts.lib_index = {p.stem: p for p in (self.game.save / "lib").glob("*.py")}
-        opts.lib_closure = ss.lib_dependency_closure(opts.lib_index)
         for slot in ("solar_1", "smelter_1"):
-            reached = ss.libs_reached((self.game.save / f"{slot}.py").read_text(encoding="utf-8"), opts)
+            reached = _reached_libs((self.game.save / f"{slot}.py").read_text(encoding="utf-8"), self.game.save / "lib")
             self.assertFalse(reached & {"mid", "old_helper"}, slot)
 
 

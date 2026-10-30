@@ -12,6 +12,15 @@ from harness import StubTestCase
 from vehicle_host import make_vehicle
 
 TARGET = (100.0, 0.0)  # 100 m out from the home slot at (0, 0), 100 m back
+BATTERY_CAPACITY_WH = 1000.0
+# Hand-computed trip budget for TARGET, empty cargo, no scans:
+#   cruise throttle 0.6, empty: 0.0232379 Wh/m (travel power / speed model)
+#   drive: 100 m out + 100 m back = 200 m * 0.0232379 = 4.647580 Wh
+#   SAFETY_MARGIN_MULTIPLIER 1.05: 4.647580 * 1.05 = 4.879959 Wh
+#   + MIN_EMERGENCY_RESERVE_WH 8.0 = 12.879959 Wh
+# Pinned, not re-derived, so a mistake shared by test and code (a return leg
+# priced at the wrong rate or left out) still fails.
+NEEDED_WH = 12.879959
 
 
 class _EnergyCase(StubTestCase):
@@ -20,23 +29,27 @@ class _EnergyCase(StubTestCase):
         self.ctl, self.pioneer = make_vehicle(self.world)
 
     def set_battery(self, wh):
-        self.pioneer.battery = VehicleBattery(1000.0, wh)
+        self.pioneer.battery = VehicleBattery(BATTERY_CAPACITY_WH, wh)
 
     def rate(self, cargo_units=0):
         return self.ctl.wh_per_meter_at_throttle(self.ctl.cruise_throttle, cargo_units=cargo_units)
 
 
 class TripEnergyBoundaryTests(_EnergyCase):
+    def setUp(self):
+        super().setUp()
+        # The +-1 Wh edge cases only mean something below a full battery.
+        self.assertLess(NEEDED_WH + 1.0, BATTERY_CAPACITY_WH)
+
     def needed_wh(self):
-        """There-and-back drive with the safety margin, plus the emergency reserve."""
-        drive_wh = 100.0 * self.rate() + 100.0 * self.rate()
-        return drive_wh * self.ctl.SAFETY_MARGIN_MULTIPLIER + self.ctl.MIN_EMERGENCY_RESERVE_WH
+        """The code's budget to the last bit (pinned to NEEDED_WH by the test below)."""
+        return self.trip()["total_required_wh"]
 
     def trip(self):
         return self.ctl.calculate_trip_energy(TARGET, planned_scans=0)
 
     def test_total_counts_both_legs_and_reserve(self):
-        self.assertAlmostEqual(self.trip()["total_required_wh"], self.needed_wh(), places=9)
+        self.assertAlmostEqual(self.trip()["total_required_wh"], NEEDED_WH, places=5)
 
     def test_battery_exactly_at_budget_is_achievable(self):
         self.set_battery(self.needed_wh())

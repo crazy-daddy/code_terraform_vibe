@@ -11,6 +11,7 @@ between its two end pieces.
 
 import builtins
 import unittest
+from unittest import mock
 
 import harness  # first: installs game builtins and lib paths
 
@@ -95,7 +96,9 @@ class PlannerFlowTest(harness.StubTestCase):
                 if self.passes >= PASSES:
                     raise _Stop
 
-        builtins.sleep = sleep  # type: ignore[attr-defined]
+        patcher = mock.patch.object(builtins, "sleep", sleep, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         delattr(builtins, "list_pipes")

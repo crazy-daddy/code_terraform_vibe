@@ -47,6 +47,9 @@ class PowerGuardLimitTests(harness.StubTestCase):
         self.world.add_building("habitat_1", home, "habitat")
         self.ids = ["battery_1", "steam_turbine_1", "heater_1", "smelter_1", "habitat_1"]
         self.manager = power.PowerGridManager(self.grid(CAPACITY_WH), clock=self.world.clock)
+        # Guard: one shed fraction per default tier, and a steam-phase grid.
+        self.assertEqual(len(power.DEFAULT_SHEDDING_TIERS), len(power.EMERGENCY_SHED_FRACTIONS))
+        self.assertEqual(power.grid_phase(self.grid(CAPACITY_WH)), power.PHASE_STEAM)
 
     def grid(self, stored_wh):
         return self.world.add_grid("battery_1", self.ids, consumed=200.0, stored=stored_wh, capacity=CAPACITY_WH)
@@ -60,10 +63,6 @@ class PowerGuardLimitTests(harness.StubTestCase):
 
     def powered(self, machine_id):
         return self.power_control.is_powered(machine_id)
-
-    def test_layout_matches_the_default_tiers(self):
-        self.assertEqual(len(power.DEFAULT_SHEDDING_TIERS), len(power.EMERGENCY_SHED_FRACTIONS))
-        self.assertEqual(power.grid_phase(self.grid(CAPACITY_WH)), power.PHASE_STEAM)
 
     def test_falling_reserve_sheds_tier_by_tier_strictly_below_each_fraction(self):
         steps = [

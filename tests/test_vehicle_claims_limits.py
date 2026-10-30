@@ -48,6 +48,11 @@ class ClaimStaleEdgeTests(StubTestCase):
         self.assertTrue(self.claim(self.owner, START))
         self.assertTrue(self.claim(self.owner, START + self.stale - 1))
         self.assertFalse(self.claim(self.peer, START + 2 * self.stale - 2))
+        # Long past stale (no peer took it meanwhile): still the owner's to renew.
+        late = START + 5 * self.stale
+        self.assertTrue(self.claim(self.owner, late))
+        self.assertFalse(self.claim(self.peer, late + self.stale - 1))
+        self.assertEqual(self.holder(), "pioneer_1")
 
     def test_heartbeat_extends_the_claim(self):
         self.claim(self.owner, START)

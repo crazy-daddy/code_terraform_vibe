@@ -98,13 +98,21 @@ class SourceNettingTests(harness.StubTestCase):
         self.assertEqual(self.snapshot(), before)
 
     def test_inventory_to_hauler_cargo_keeps_smelter_demands(self):
-        before = self.smelter_demands()
+        before_demands, before_have = self.snapshot()
+        before_network = production_source.SourceCache().network_have(self.item)
         self.take_from_inventory()
         remote = self.sample.remotes[0].id
+        hauler = self.sample.drones[0].id  # a drone the sample world really has
         logistics_requests.reserve_pickup(
-            "drone_1", remote, self.item, UNITS, self.world.clock.now, source_id=self.home.id, aboard=True
+            hauler, remote, self.item, UNITS, self.world.clock.now, source_id=self.home.id, aboard=True
         )
-        self.assertEqual(self.smelter_demands(), before)
+        after_demands, after_have = self.snapshot()
+        # Network-wide the cargo still counts: no new Smelter shortfall.
+        self.assertEqual(after_demands, before_demands)
+        self.assertEqual(production_source.SourceCache().network_have(self.item), before_network)
+        # At home it is gone: bound for a remote outpost, not on hand for home crafts.
+        self.assertEqual(after_have[self.item], before_have[self.item] - UNITS)
+        self.assertEqual(after_have[self.part], before_have[self.part])
 
 
 if __name__ == "__main__":
