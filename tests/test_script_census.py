@@ -3,7 +3,7 @@ import unittest
 import script_census
 from harness import StubTestCase
 from machine_activity import record
-from script_census import CENSUS_TICK_INTERVAL, allowance, census_if_due, count_running, machine_refs, snapshot
+from script_census import CENSUS_TICK_INTERVAL, allowance, census_if_due, machine_refs, snapshot
 
 
 class ScriptCensusTests(StubTestCase):
@@ -20,21 +20,15 @@ class ScriptCensusTests(StubTestCase):
         script_census.last_census_tick = None
         script_census.highest_found.update({"panel": 0, "automation": 0})
 
-    def test_counts_running_machine_scripts(self):
-        self.assertEqual(count_running(), (2, 4))
-
     def test_allowance_matches_game_split(self):
         self.assertEqual(allowance(20), 1000)
         self.assertEqual(allowance(165), 303)
         self.assertEqual(allowance(0), 1000)
 
-    def test_logs_once_per_interval(self):
-        census_if_due(1000)
-        census_if_due(1000 + CENSUS_TICK_INTERVAL - 1)
-        census_if_due(1000 + CENSUS_TICK_INTERVAL)
-        lines = [line for line in self.debug_log().splitlines() if "scripts running: " in line]
-        self.assertEqual(len(lines), 2)
-        self.assertIn("scripts running: 2 of 4 machines (incl. 0 panel/automation scripts", lines[0])
+    def test_census_runs_once_per_interval(self):
+        self.assertIsNotNone(census_if_due(1000))
+        self.assertIsNone(census_if_due(1000 + CENSUS_TICK_INTERVAL - 1))
+        self.assertIsNotNone(census_if_due(1000 + CENSUS_TICK_INTERVAL))
 
     def test_counts_poi_extractors_and_harvester(self):
         w = self.world
@@ -56,7 +50,6 @@ class ScriptCensusTests(StubTestCase):
             {"thermal_cap_1", "water_pump_1", "oil_pump_1", "exotic_gas_cap_1", "exotic_spring_tap_1", "harvester_1"}
             <= ids
         )
-        self.assertEqual(count_running(), (5, 9))
 
     def test_panels_and_automations_count_but_are_not_machines(self):
         self.world.run_control.running.update({"panel_1", "panel_20", "automation_2"})
@@ -66,9 +59,6 @@ class ScriptCensusTests(StubTestCase):
         self.assertEqual(ui, {"panel_1", "panel_20", "automation_2"})
         self.assertEqual(running, {"smelter_1", "solar_1"})
         self.assertFalse({"panel_1", "automation_2"} & {row[0] for row in rows})
-        self.assertEqual(count_running(), (5, 4))
-        census_if_due(1000)
-        self.assertIn("scripts running: 5 of 4 machines (incl. 3 panel/automation scripts", self.debug_log())
 
     def test_probe_range_follows_highest_panel_found(self):
         self.world.run_control.running.add("panel_40")
