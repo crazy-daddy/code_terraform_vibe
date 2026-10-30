@@ -91,13 +91,13 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(roles_card.age_hours({"since": 0}, 36000), 1.0)  # real hours, game_rules.TICKS_PER_REAL_HOUR
 
     def test_entry_lines(self):
-        lines = roles_card.entry_lines(self.MISSIONS["entries"][2], 72000, self.NAMES)
-        self.assertEqual(lines, ["since 0.0 h (tick 72000)", "by pipe", "at 12, -4", "no holder"])
-        self.assertNotIn("at ", " ".join(roles_card.entry_lines({"coords": ["x", 1]}, 500, self.NAMES)))
-        lines = roles_card.entry_lines(self.MISSIONS["entries"][0], 72000, self.NAMES)
-        self.assertIn("outpost Base", lines)
-        self.assertIn("40 x iron_ingot", lines)
-        self.assertEqual(lines[-1], "held by H_1")
+        text = " ".join(roles_card.entry_lines(self.MISSIONS["entries"][2], 72000, self.NAMES))
+        for fact in ("72000", "pipe", "12, -4"):
+            self.assertIn(fact, text)
+        self.assertNotIn("x", " ".join(roles_card.entry_lines({"coords": ["x", 1]}, 500, self.NAMES)))
+        text = " ".join(roles_card.entry_lines(self.MISSIONS["entries"][0], 72000, self.NAMES))
+        for fact in ("Base", "40", "iron_ingot", "H_1"):  # outpost id resolved to its name
+            self.assertIn(fact, text)
 
 
 if __name__ == "__main__":

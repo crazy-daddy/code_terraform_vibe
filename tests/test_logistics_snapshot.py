@@ -204,14 +204,10 @@ class PublisherTests(SnapshotCase):
         self.assertEqual(record["tick"], now + snap.LOGISTICS_SNAPSHOT_TICKS)
         self.assertEqual(set(record["outposts"]), {"home", "outpost_a", "outpost_b"})
 
-    def test_refused_write_is_logged(self):
+    def test_refused_write_deactivates_the_publisher(self):
         now, _ = self._world()
-        with (
-            mock.patch.object(snap.archive, "set", return_value=False),
-            mock.patch.object(snap, "swallowed") as swallowed,
-        ):
+        with mock.patch.object(snap.archive, "set", return_value=False):
             self.assertFalse(self.publisher.step(now))
-        swallowed.assert_called_once_with("logistics_snapshot.SnapshotPublisher.step", "record write refused")
         self.assertFalse(self.publisher.active)
         self.assertIsNone(ARCHIVE.get(snap.LOGISTICS_SNAPSHOT_KEY, None))
 

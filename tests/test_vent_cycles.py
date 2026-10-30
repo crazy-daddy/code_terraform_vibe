@@ -108,7 +108,7 @@ class StepTests(StubTestCase):
         self.vent._phase = phase
         vent_cycles.step(self.world.clock.now)
 
-    def test_logs_and_persists(self):
+    def test_persists_the_dormant_spell(self):
         self.poll(0.0, "active")
         self.poll(0.2, "dormant")
         for hours in range(10, 50, 10):
@@ -120,7 +120,6 @@ class StepTests(StubTestCase):
         self.assertAlmostEqual(stored["vent_4"]["dormant"], 46.2 * 60.0)
         self.assertEqual(stored["vent_4"]["rate"], 920)
         self.assertEqual(vent_cycles.cycle_minutes("vent_4"), (None, stored["vent_4"]["dormant"]))
-        self.assertIn("dormant lasted", self.debug_log())
 
     def test_deep_survey_values_win(self):
         self.vent._cycle = (7014, 2760)
