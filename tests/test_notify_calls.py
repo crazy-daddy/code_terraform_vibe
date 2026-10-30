@@ -1,6 +1,10 @@
 """Every notify() call in scripts/ and autoplay/ passes arguments the game accepts. The game's notify builtin
 raises on a bad level, a non-number duration or a non-bool dismissible, and our calls carry no guard, so one
-bad toast would crash the calling script (docs/guide/builtins_and_commands.md notify)."""
+bad toast would crash the calling script (docs/guide/builtins_and_commands.md notify).
+
+The level must be built from string literals. duration_seconds and dismissible are checked only when passed as
+literals (plus float("inf"/"nan") for duration); computed values are left to the harness stub notify(), which
+raises like the game for every call the suite runs."""
 
 import ast
 import glob
@@ -22,6 +26,19 @@ def _literal_levels(node):
     return None
 
 
+def _is_non_finite_float(node):
+    """float("inf"), float("-nan") and the like: a number the game's notify rejects as not finite."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "float"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+        and node.args[0].value.strip().lstrip("+-").lower() in ("inf", "infinity", "nan")
+    )
+
+
 def _problems(call):
     args = dict(zip(("text", "level", "duration_seconds", "dismissible"), call.args))
     for kw in call.keywords:
@@ -39,6 +56,8 @@ def _problems(call):
         isinstance(duration.value, bool) or not isinstance(duration.value, (int, float))
     ):
         yield f"duration_seconds {duration.value!r}"
+    if _is_non_finite_float(duration):
+        yield f"duration_seconds {ast.unparse(duration)} (game requires finite)"
     dismissible = args.get("dismissible")
     if isinstance(dismissible, ast.Constant) and not isinstance(dismissible.value, bool):
         yield f"dismissible {dismissible.value!r}"

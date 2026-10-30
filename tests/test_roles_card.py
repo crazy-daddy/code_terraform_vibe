@@ -94,7 +94,8 @@ class QueueTests(unittest.TestCase):
         text = " ".join(roles_card.entry_lines(self.MISSIONS["entries"][2], 72000, self.NAMES))
         for fact in ("72000", "pipe", "12, -4"):
             self.assertIn(fact, text)
-        self.assertNotIn("x", " ".join(roles_card.entry_lines({"coords": ["x", 1]}, 500, self.NAMES)))
+        bad = roles_card.entry_lines({"coords": ["x", 1]}, 500, self.NAMES)
+        self.assertFalse([line for line in bad if line.startswith("at ")])  # non-numeric coords: no position line
         text = " ".join(roles_card.entry_lines(self.MISSIONS["entries"][0], 72000, self.NAMES))
         for fact in ("Base", "40", "iron_ingot", "H_1"):  # outpost id resolved to its name
             self.assertIn(fact, text)

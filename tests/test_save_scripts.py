@@ -134,14 +134,14 @@ class MainAutoplayTest(unittest.TestCase):
                 save_scripts.main()
             self.assertEqual(hashlib.sha256(save.read_bytes()).hexdigest(), before, "save file changed")
             outdir = root / "out"
-            # Read slot scripts and the strip manifest; the ~200 staged lib copies only by name (reading them all
-            # cost about a second per call on Windows).
-            manifest = "lib/" + save_scripts.STRIP_MANIFEST
+            # Read slot scripts, the strip manifest and the autoplay lib under test; the ~200 staged lib copies
+            # only by name (reading them all cost about a second per call on Windows).
+            read_libs = {"lib/" + save_scripts.STRIP_MANIFEST, "lib/blueprint_queue.py"}
             files = {}
             for p in outdir.rglob("*"):
                 if p.is_file():
                     rel = p.relative_to(outdir).as_posix()
-                    files[rel] = p.read_text(encoding="utf-8") if "/" not in rel or rel == manifest else ""
+                    files[rel] = p.read_text(encoding="utf-8") if "/" not in rel or rel in read_libs else ""
             return err.getvalue(), files
 
     def test_warns_without_flag(self):
@@ -164,7 +164,8 @@ class MainAutoplayTest(unittest.TestCase):
     def test_no_warning_with_include_autoplay(self):
         err, files = self._main("--include-autoplay")
         self.assertNotIn("warn", err)
-        self.assertIn("lib/blueprint_queue.py", files)
+        # autoplay/lib's copy, not the stale one the save holds
+        self.assertEqual(files["lib/blueprint_queue.py"], "from storage_take import takeable_stock\n")
 
     def test_check_warns_and_writes_nothing(self):
         err, files = self._main("--check", out=False)

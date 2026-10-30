@@ -566,8 +566,15 @@ class BudgetTests(unittest.TestCase):
 
     # score_step() packs anchors into slices up to STEP_UNITS, so the worst slice
     # does not grow with the anchor count: a 160 m grid (36) hits the same worst
-    # case as an 80 m one (144) at a quarter of the trace time.
-    ANCHORS = tuple((x, y) for x in range(0, 900, 160) for y in range(0, 900, 160))
+    # case as an 80 m one (144) at a quarter of the trace time. Plus the costliest
+    # single anchors of the 80 m grid that the 160 m one misses (one-anchor worst
+    # slice, 2026-10): (880, 800) 2851 steps in test_score_step_fits, (160, 240)
+    # 3048 with remote, (80, 720) 2496 with remote capped.
+    ANCHORS = tuple((x, y) for x in range(0, 900, 160) for y in range(0, 900, 160)) + (
+        (880, 800),
+        (160, 240),
+        (80, 720),
+    )
 
     def dense(self):
         pois = [

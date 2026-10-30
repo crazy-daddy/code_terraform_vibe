@@ -8,6 +8,7 @@ import lead_cask
 import oil_generator
 import parking_client
 import power
+import power_solar
 import script_parking
 from game_stubs import Building
 
@@ -235,6 +236,50 @@ class SolarNightGuardTests(_GridWorld):
         self.assertEqual(manager.phase, power.PHASE_STEAM)
         self.assertIsNone(manager.solar_guard)
         self.assertTrue(self.heater_on())  # 30% combined reserve is above every shed line
+
+
+class NoticeTests(_GridWorld):
+    """The operator's toasts fire (count only: wording, level and duration are free to change)."""
+
+    def test_night_shed_notifies(self):
+        clock = self.world.clock
+        clock.elevation = 30.0
+        manager = power.PowerGridManager(self.grid(), clock=clock)
+        manager.supervise_grid(self.grid(), clock.elevation)
+        clock.elevation, clock.hours = 0.0, 20.0
+        manager.supervise_grid(self.grid(consumed=200.0), clock.elevation)
+        self.assertEqual(len(self.world.notices), 2)  # battery advisory + shed
+        self.assertTrue(any(text.startswith("[Power Guard] Shed") for text in self.world.notices))
+
+    def test_sunset_advisories_notify(self):
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        guard = power_solar.SolarNightGuard(manager, 30.0)
+        guard.last_advisory_day = 0
+        guard.peak_day_battery_wh = 50.0
+        guard.handle_sunset(2, 18.0, "battery_1", 100.0, 500.0)
+        self.assertEqual(len(self.world.notices), 2)
+
+    def test_draining_grid_notifies_at_day_close(self):
+        clock = self.world.clock
+        clock.elevation = 30.0
+        manager = power.PowerGridManager(self.grid(), clock=clock)
+        manager.supervise_grid(self.grid(), clock.elevation)
+        self.assertEqual(self.world.notices, [])
+        clock.day += 1
+        battery = self.world.get_component("battery_1")
+        assert battery is not None
+        battery.charge = 0.0  # 300 -> 0 of 1000 Wh: past DAILY_LOSS_WARN_FRACTION
+        manager.supervise_grid(self.grid(), clock.elevation)
+        self.assertEqual(len(self.world.notices), 1)
+
+    def test_solar_retire_advisory_notifies(self):
+        manager = power.PowerGridManager(self.grid(), clock=self.world.clock)
+        manager.phase = power.PHASE_OIL
+        start = {"day": 1, "bat_wh": 300.0, "bat_cap": 1000.0, "steam_t": 0.0, "steam_cap": 0.0}
+        start.update(solar_wh=10.0, gen_wh=1000.0)  # 1% solar, under SOLAR_RETIRE_SHARE
+        now = {"bat_wh": 300.0, "bat_cap": 1000.0, "steam_t": 0.0, "steam_cap": 0.0}
+        manager._close_day(start, now, "battery_1")  # no public path short of a whole oil-phase day
+        self.assertEqual(len(self.world.notices), 1)
 
 
 class ReactorOilTests(_GridWorld):

@@ -158,6 +158,12 @@ class IgnorePinTests(unittest.TestCase):
         text = ss.report(kept, False, ignored, review)
         for item in [*grown, *unpinned, *stale]:
             self.assertIn(item.id, text)
+        # At custom limits a stale entry may only be stale there: still listed, but not advised for removal.
+        custom = ss.report(kept, False, 0, review, True)
+        self.assertIn("stale, remove", text)
+        self.assertNotIn("stale, remove", custom)
+        for item in stale:
+            self.assertIn(item.id, custom)
 
 
 if __name__ == "__main__":

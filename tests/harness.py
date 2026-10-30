@@ -12,6 +12,7 @@ Run from the repo root: `python -m unittest discover -s tests`.
 """
 
 import builtins
+import math
 import os
 import re
 import sys
@@ -56,6 +57,8 @@ def _install_builtins(world):
             isinstance(duration_seconds, bool) or not isinstance(duration_seconds, (int, float))
         ):
             raise TypeError("notify() duration_seconds must be a number")
+        if duration_seconds is not None and not math.isfinite(duration_seconds):
+            raise ValueError("notify() duration_seconds must be finite")
         if not isinstance(dismissible, bool):
             raise TypeError("notify() dismissible must be True or False")
         world.notices.append(text)

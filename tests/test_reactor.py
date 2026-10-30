@@ -165,6 +165,11 @@ class ReactorTests(harness.StubTestCase):
         self.assertFalse(machine.overheated)
         self.assertLess(abs(machine.temp - rx.TARGET_C), 10)
 
+    def test_overheat_notifies(self):
+        _machine, controller = self.make([1.0])
+        controller.on_status("overheated", 960.0)
+        self.assertEqual(len(self.world.notices), 1)
+
     def test_low_gain_runs_full_heat(self):
         machine, controller = self.make([0.7])
         self.run_hours(machine, controller, 10)

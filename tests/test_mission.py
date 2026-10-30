@@ -1,4 +1,4 @@
-"""Mission record, Vehicle/DroneClaimsMixin.begin_mission/end_mission."""
+"""Mission record, Vehicle/DroneClaimsMixin.begin_mission/end_mission and the read-only current_target* views."""
 
 import unittest
 
@@ -6,10 +6,12 @@ import drone_claims
 import mining_reservations
 import vehicle_claims
 from archive import archive
+from drone import DroneController
 from fleet_unit import FleetUnitMixin
 from harness import StubTestCase
 from mission import Mission
 from tree_console import TreeConsole
+from vehicle import VehicleController
 
 MINE = {"type": "mine", "coords": (5, 5), "name": "Site_9_iron_ore", "harvest_item": "iron_ore", "estimated_units": 8}
 
@@ -49,6 +51,18 @@ class MissionRecordTests(unittest.TestCase):
 
     def test_coords(self):
         self.assertEqual(Mission("mine", "site_9", MINE).coords, (5.0, 5.0))
+
+
+class ViewTests(unittest.TestCase):
+    """The views have setters that raise at runtime (pyright accepts the write), so only begin/end_mission write."""
+
+    def test_writes_raise(self):
+        for cls in (VehicleController, DroneController):
+            unit = cls.__new__(cls)
+            unit.mission = None
+            for name in ("current_target", "current_target_key"):
+                with self.subTest(cls=cls.__name__, name=name), self.assertRaises(AttributeError):
+                    setattr(unit, name, None)
 
 
 class BeginEndMissionTests(StubTestCase):
