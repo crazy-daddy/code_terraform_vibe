@@ -8,16 +8,6 @@ from harness import StubTestCase
 
 
 class ClassifyTests(unittest.TestCase):
-    def test_status_table(self):
-        self.assertEqual(ops.classify("ok"), "ok")
-        self.assertEqual(ops.classify("not_found"), "gone")
-        for status in ("inventory_full", "cargo_present", "docked_drone", "construction_dependency"):
-            self.assertEqual(ops.classify(status), "transient")
-        self.assertEqual(ops.classify("no_kit"), "kit")
-        self.assertEqual(ops.classify("item_not_in_inventory"), "kit")
-        for status in ("deploy_limit", "wrong_biome_for_machine", "locked", "not_undeployable"):
-            self.assertEqual(ops.classify(status), "fatal")
-
     def test_every_deploy_status_has_one_rule(self):
         """docs/types/infrastructure_and_fluids.md DeployResult.status: one verdict for every deploy() caller."""
         fatal = (
@@ -28,11 +18,23 @@ class ClassifyTests(unittest.TestCase):
             "wrong_biome_for_machine",
             "duplicate_outpost_machine",
             "missing_drone_station",
+            "not_undeployable",
         )
         for status in fatal:
             self.assertEqual(ops.classify(status), "fatal", status)
-        self.assertEqual(ops.classify("no_kit"), "kit")
-        for status in ("drone_station_full", "no_computer", "error"):
+        self.assertEqual(ops.classify("ok"), "ok")
+        self.assertEqual(ops.classify("not_found"), "gone")
+        for status in ("no_kit", "item_not_in_inventory"):
+            self.assertEqual(ops.classify(status), "kit", status)
+        for status in (
+            "drone_station_full",
+            "no_computer",
+            "error",
+            "inventory_full",
+            "cargo_present",
+            "docked_drone",
+            "construction_dependency",
+        ):
             self.assertEqual(ops.classify(status), "transient", status)
 
 

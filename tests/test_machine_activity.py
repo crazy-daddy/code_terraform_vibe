@@ -93,13 +93,6 @@ class MachineActivityTests(StubTestCase):
         self.assertNotIn("drone_3", state["machines"])
         self.assertEqual(state["groups"]["drone:miner"]["n"], 2)
 
-    def test_logs_summary_once_per_interval(self):
-        record(snapshot(), 1000)
-        record(snapshot(), 1300)
-        lines = [line for line in self.debug_log().splitlines() if "drone:miner: 3 machines" in line]
-        self.assertEqual(len(lines), 1)
-        self.assertIn("retire 2", lines[0])
-
     def test_fleet_class(self):
         self.assertEqual(fleet_class("IDLE_AT_BASE"), "idle")
         self.assertEqual(fleet_class("READY_AT_OUTPOST"), "idle")

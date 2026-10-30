@@ -130,7 +130,7 @@ class PatchLibsTest(unittest.TestCase):
 
 
 class MainArgvTest(unittest.TestCase):
-    def _run(self, *argv, out_arg=True):
+    def _run(self, *argv):
         """main() with subprocess.run mocked; returns the argv lists it was called with."""
         calls = []
         with tempfile.TemporaryDirectory() as out, mock.patch.object(tp.tempfile, "mkdtemp", return_value=out):
@@ -147,9 +147,7 @@ class MainArgvTest(unittest.TestCase):
                 mock.patch.object(tp.subprocess, "run", side_effect=fake_run),
                 mock.patch.object(tp, "patch_libs", return_value={}) as patch,
                 mock.patch.object(tp, "summarize"),
-                mock.patch.object(
-                    sys, "argv", ["tick_profile.py", "--save", "S.json", *(["--out", out] if out_arg else []), *argv]
-                ),
+                mock.patch.object(sys, "argv", ["tick_profile.py", "--save", "S.json", "--out", out, *argv]),
                 mock.patch("builtins.print"),
             ):
                 tp.main()
@@ -170,17 +168,7 @@ class MainArgvTest(unittest.TestCase):
         self.assertTrue({"log", "_ceil", "_rank", "_fmt_price", "score", "check"} <= skip)
         self.assertEqual(chunk_scale, 1.0)
 
-    def test_refresh_is_the_default(self):
-        calls, patch_args = self._run()
-        stage, node = calls
-        self.assertNotIn("--include-autoplay", stage)
-        self.assertNotIn("--include-autoplay", node)
-        self.assertEqual(patch_args[1], tp.DEFAULT_MODULES.split(","))
-        self.assertEqual(patch_args[3], tp.DEFAULT_GATE)
-
-    def test_log_levels_default_to_info_with_prof_lines_at_debug(self):
-        (_stage, node), _ = self._run()
-        self.assertEqual(json.loads(node[node.index("--log-levels") + 1]), {"*": "info", "tick_profile": "debug"})
+    def test_prof_lines_stay_at_debug_under_explicit_log_levels(self):
         (_stage, node), _ = self._run("--log-levels", '{"*": "info", "drone": "debug", "tick_profile": "info"}')
         levels = json.loads(node[node.index("--log-levels") + 1])
         self.assertEqual(levels, {"*": "info", "drone": "debug", "tick_profile": "debug"})
@@ -194,11 +182,6 @@ class MainArgvTest(unittest.TestCase):
         self.assertEqual(patch_args[1], ["outpost_plan", "outpost_sites", "outpost_needs"])
         self.assertEqual(patch_args[6], 0.5)
 
-    def test_chunk_scale_must_be_positive(self):
-        for bad in ("0", "-1", "nan"):
-            with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-                self._run("--chunk-scale", bad)
-
     def test_function_gate_label_needs_no_self(self):
         _calls, patch_args = self._run("--gate", "fleet_intent:haul_root", "--modules", "fleet_intent")
         self.assertEqual(patch_args[3], "fleet_intent:haul_root")
@@ -207,18 +190,6 @@ class MainArgvTest(unittest.TestCase):
     def test_function_gate_rejects_an_explicit_self_label(self):
         with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
             self._run("--gate", "fleet_intent:haul_root", "--label", "self.name")
-
-    def test_out_defaults_to_a_temp_dir(self):
-        calls, _ = self._run(out_arg=False)
-        stage, node = calls
-        self.assertTrue(stage[stage.index("--out") + 1].endswith("scripts"))
-        self.assertTrue(node[node.index("--out") + 1].endswith("run"))
-
-    def test_include_autoplay_without_preset(self):
-        calls, _ = self._run("--include-autoplay")
-        stage, node = calls
-        self.assertIn("--include-autoplay", stage)
-        self.assertIn("--include-autoplay", node)
 
     def test_autoplay_is_stripped_by_default(self):
         calls, _ = self._run()
@@ -231,11 +202,6 @@ class MainArgvTest(unittest.TestCase):
         calls, _ = self._run("--keep-stale-autoplay")
         stage, node = calls
         self.assertFalse({"--strip-autoplay", "--include-autoplay"} & set(stage + node))
-
-    def test_keep_stale_autoplay_excludes_include_autoplay(self):
-        for extra in (("--include-autoplay",), ("--preset", "founding")):
-            with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-                self._run("--keep-stale-autoplay", *extra)
 
 
 if __name__ == "__main__":

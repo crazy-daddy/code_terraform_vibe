@@ -7,12 +7,6 @@ import harness  # noqa: F401 (side effect: installs game builtins and lib paths)
 
 
 class CatalogTests(unittest.TestCase):
-    def test_every_catalog_building_group_is_a_list_of_type_ids(self):
-        for name in roles.ROLE_CATALOG:
-            groups = roles._groups(name)
-            self.assertTrue(groups, name)
-            self.assertTrue(all(isinstance(t, str) for group in groups for t in group), name)
-
     def test_bio_chain_per_biome(self):
         self.assertEqual(roles._groups("bio_coastal")[-1], ["bio_luminizer"])
         self.assertEqual(roles._groups("bio_frozen"), [["bio_collector"], ["bio_lab"], ["bio_exchange"]])

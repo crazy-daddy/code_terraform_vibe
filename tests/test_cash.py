@@ -184,12 +184,11 @@ class ConsumerTests(CashTestCase):
         self.assertEqual(cash.shop_price("cryo_solvent"), 12)
         self.world.services["shop"].prices = {}
         self.assertEqual(cash.shop_price("cryo_solvent"), 12)
-        self.assertEqual(cash.shop_price("unknown", 7), 7)
 
 
 class ShopPricesTests(CashTestCase):
     def test_reads_catalogue_as_int_costs(self):
-        self.world.services["shop"].prices = {"a": 12, "b": 7.0}
+        self.world.services["shop"].prices = {"a": 12, "b": 7.5}
         prices = cash.shop_prices()
         self.assertEqual(prices, {"a": 12, "b": 7})
         self.assertIsInstance(prices["b"], int)

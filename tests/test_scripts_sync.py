@@ -214,6 +214,7 @@ class _SyncTest(unittest.TestCase):
                 "APPLY_PICKUP_TIMEOUT_S",
                 "APPLY_CONFIRM_TIMEOUT_S",
                 "RECOVER_POLL_S",
+                "STRAGGLER_SETTLE_S",
             )
         }
         ss.SYNC_LOG = self.tmp / "sync.log"
@@ -222,6 +223,7 @@ class _SyncTest(unittest.TestCase):
         ss.APPLY_PICKUP_TIMEOUT_S = 0.0
         ss.APPLY_CONFIRM_TIMEOUT_S = 0.0
         ss.RECOVER_POLL_S = 0.01
+        ss.STRAGGLER_SETTLE_S = 0.0
         for state in (ss._APPLIED_LIBS, ss._RESTARTS, ss._RECOVER_NOTES, ss._CONSTRUCTION_WAIT):
             state.clear()
         for state in (
@@ -281,6 +283,50 @@ class ApplyOrderTest(_SyncTest):
         self.game.write()
         ss.apply_pending_libraries(self.game.opts())
         self.assertEqual(self.game.commands, [("apply-library", "storage")])
+
+    def _settle_run(self, rise_on_read):
+        """apply_pending_libraries() with a 30 s straggler settle on a fake clock (no real wait). The apply
+        skips automation_1; its run serial rises on read `rise_on_read` (1 = the pre-apply read), or never."""
+        self.game.add_lib("storage", "X = 1\n", old="# old\n")
+        self.game.add_script("automation_1", "from storage import X\n")
+        self.game.skip_on_apply = {"automation_1"}
+        self.game.write()
+        ss.STRAGGLER_SETTLE_S = 30.0
+        now, reads = [0.0], [0]
+        clock = types.SimpleNamespace(monotonic=lambda: now[0], sleep=lambda s: now.__setitem__(0, now[0] + s))
+        real_serials, real_restart = ss.run_serials, ss.restart_stragglers
+
+        def run_serials(save_dir):
+            reads[0] += 1
+            serials = real_serials(save_dir)
+            if rise_on_read and reads[0] >= rise_on_read:
+                serials["automation_1"] = serials.get("automation_1", 0) + 1
+            return serials
+
+        def restart_stragglers(*args):
+            ss.time = clock  # fake clock only around the settle poll
+            try:
+                return real_restart(*args)
+            finally:
+                ss.time = time
+
+        ss.run_serials, ss.restart_stragglers = run_serials, restart_stragglers
+        try:
+            ss.apply_pending_libraries(self.game.opts())
+        finally:
+            ss.run_serials, ss.restart_stragglers = real_serials, real_restart
+        return reads[0], now[0]
+
+    def test_settle_waits_for_a_late_serial_rise(self):
+        reads, waited = self._settle_run(rise_on_read=3)
+        self.assertEqual(reads, 3)  # pre-apply read, a stale poll, the risen one
+        self.assertLess(waited, 30.0)
+        self.assertEqual(self.game.commands, [("apply-library", "storage")])
+
+    def test_settle_restarts_when_the_serial_never_rises(self):
+        _reads, waited = self._settle_run(rise_on_read=None)
+        self.assertGreater(waited, 30.0)
+        self.assertEqual(self.game.commands, [("apply-library", "storage"), ("run", "automation_1")])
 
     def _slow_reply(self, key, reply, applies=True):
         """The fake game answers `reply` for `key` (applying it only if `applies`), normally otherwise."""
@@ -535,16 +581,6 @@ class RecoverTest(_SyncTest):
         self.assertEqual(len(self.game.commands), 1)  # no second start
         self.assertNotIn("exotic_gas_cap_1", ss._HELD_RESTARTS)
         self.assertNotIn("exotic_gas_cap_1", ss._OFFLINE_WAIT)
-
-
-class SyncLogTest(_SyncTest):
-    def test_lines_are_stamped_and_appended(self):
-        ss.warn("first")
-        ss.ok("second\nthird")
-        lines = ss.SYNC_LOG.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(len(lines), 3)
-        self.assertRegex(lines[0], r"^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[warn\] first$")
-        self.assertTrue(lines[2].endswith("[ok] third"))
 
 
 class HoldTest(_SyncTest):

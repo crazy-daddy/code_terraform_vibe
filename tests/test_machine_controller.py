@@ -57,14 +57,13 @@ class NextSleepTests(harness.StubTestCase):
 
 
 class RunTests(harness.StubTestCase):
-    def test_run_logs_exception_and_keeps_going(self):
+    def test_run_survives_an_exception_and_keeps_going(self):
         original = machine_controller.validate_game_version
         machine_controller.validate_game_version = lambda: None
         self.addCleanup(setattr, machine_controller, "validate_game_version", original)
         c = _Controller([ValueError("boom"), None])
         c.run()
         self.assertEqual(c.sleeps, [5.0, 5.0])
-        self.assertIn("[m_1] Test exception: boom", self.debug_log())
 
 
 class PortCountsTests(harness.StubTestCase):

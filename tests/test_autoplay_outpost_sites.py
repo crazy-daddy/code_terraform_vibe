@@ -564,6 +564,18 @@ class BudgetTests(unittest.TestCase):
     times the density of a whole map with every contact counted).
     """
 
+    # score_step() packs anchors into slices up to STEP_UNITS, so the worst slice
+    # does not grow with the anchor count: a 160 m grid (36) hits the same worst
+    # case as an 80 m one (144) at a quarter of the trace time. Plus the costliest
+    # single anchors of the 80 m grid that the 160 m one misses (one-anchor worst
+    # slice, 2026-10): (880, 800) 2851 steps in test_score_step_fits, (160, 240)
+    # 3048 with remote, (80, 720) 2496 with remote capped.
+    ANCHORS = tuple((x, y) for x in range(0, 900, 160) for y in range(0, 900, 160)) + (
+        (880, 800),
+        (160, 240),
+        (80, 720),
+    )
+
     def dense(self):
         pois = [
             {"x": float(x), "y": float(y), "kind": "unknown"} for x in range(0, 900, 100) for y in range(0, 900, 100)
@@ -595,7 +607,7 @@ class BudgetTests(unittest.TestCase):
                 "biosites": True,
             },
         )
-        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        anchors = list(self.ANCHORS)
         state = os_.score_init(ctx, anchors, want)
         worst = 0
         while True:
@@ -620,7 +632,7 @@ class BudgetTests(unittest.TestCase):
         ctx = os_.prepare(world(outposts=[HOME, {"id": "o1", "x": 700.0, "y": 700.0}], pois=pois), west_frozen)
         self.assertGreater(len(ctx["remote"]), 30)
         want = prepared(ctx, mining("iron_ore"))
-        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        anchors = list(self.ANCHORS)
         state = os_.score_init(ctx, anchors, want)
         worst = 0
         while True:
@@ -648,7 +660,7 @@ class BudgetTests(unittest.TestCase):
         self.assertGreater(ctx["remote_n"], total // 2)
         want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam", "water"]))
         want["future_n"] = 16
-        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        anchors = list(self.ANCHORS)
         state = os_.score_init(ctx, anchors, want)
         worst = 0
         while True:
@@ -723,7 +735,7 @@ class BudgetTests(unittest.TestCase):
         ctx = os_.prepare(world(outposts=outposts, pois=pois + far, sites=sites), west_frozen)
         want = os_.prepare_want(ctx, os_.wants(mining("iron_ore"), PRESETS, ["steam", "water"]))
         self.assertEqual([len(want["future_spots"][fluid]) for fluid in ("steam", "water")], [os_.FUTURE_TOP] * 2)
-        anchors = [(x, y) for x in range(0, 900, 80) for y in range(0, 900, 80)]
+        anchors = list(self.ANCHORS)
         state = os_.score_init(ctx, anchors, want)
         worst = 0
         while True:

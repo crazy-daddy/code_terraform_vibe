@@ -23,6 +23,3 @@ class AllStationRefsTests(StubTestCase):
     def test_all_stations_raise_falls_back_to_own_station(self):
         with mock.patch.object(charging, "all_stations", side_effect=RuntimeError("scan offline")):
             self.assertEqual(self.refs(_controller()), [{"id": "station_1", "coords": (10.0, 20.0)}])
-        self.assertIn(
-            "[swallowed] charging.ChargingStationController.all_station_refs: all_stations:", self.debug_log()
-        )

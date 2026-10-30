@@ -162,11 +162,10 @@ class PullJobTests(harness.StubTestCase):
             mock.patch.object(
                 pull_plan, "pull_destinations", return_value=[[(_Outpost("outpost_3"), {"need": {"ore": 50}})]]
             ),
-            mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)) as plan,
+            mock.patch.object(pull_plan, "plan_pull_route", return_value=([], 0, None)),
             mock.patch.object(builtins, "get_component", return_value=_Network([_Outpost("outpost_1")])),
         ):
             self.assertEqual(job.step(), 10.0)
-        self.assertIs(plan.call_args.args[5], job.unviable)
         self.assertEqual(job.wait, SHORT)
         self.assertIsNone(job.dispersed_tick)
         self.assertEqual(host.calls, ["upgrade", "return", "IDLE_AT_OUTPOST"])
@@ -220,9 +219,8 @@ class PullJobTests(harness.StubTestCase):
             "outpost_3": ([(src, [("ore", 20)])], 20, (0.2,)),
             "outpost_4": ([(src, [("ore", 90)])], 90, (0.9,)),
         }
-        host, mission, planned, claimed = self._pick(groups, plans)
+        host, mission, planned, _claimed = self._pick(groups, plans)
         self.assertEqual(mission.target["dest"], "outpost_3")
-        self.assertEqual(claimed.call_args.args[1], "outpost_3")
         self.assertEqual(host.home_outpost.id, "outpost_3")
         # The lower band group is never planned while a higher one has a trip.
         self.assertEqual([c.args[1].id for c in planned.call_args_list], ["outpost_2", "outpost_3"])

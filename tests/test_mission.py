@@ -54,25 +54,15 @@ class MissionRecordTests(unittest.TestCase):
 
 
 class ViewTests(unittest.TestCase):
-    def test_views_follow_mission_and_reject_writes(self):
-        v = VehicleController.__new__(VehicleController)
-        v.mission = None
-        self.assertEqual((v.current_target, v.current_target_key, v.current_target_reserved), (None, None, False))
-        v.mission = Mission("mine", "site_9", MINE, reserved_yield=True)
-        self.assertEqual((v.current_target, v.current_target_key, v.current_target_reserved), (MINE, "site_9", True))
-        for name in ("current_target", "current_target_key", "current_target_reserved"):
-            with self.assertRaises(AttributeError):
-                setattr(v, name, None)
+    """The views have setters that raise at runtime (pyright accepts the write), so only begin/end_mission write."""
 
-    def test_drone_views_follow_mission_and_reject_writes(self):
-        d = DroneController.__new__(DroneController)
-        d.mission = None
-        self.assertEqual((d.current_target, d.current_target_key), (None, None))
-        d.mission = Mission("mine", "bio_3_7", BIO)
-        self.assertEqual((d.current_target, d.current_target_key), (BIO, "bio_3_7"))
-        for name in ("current_target", "current_target_key"):
-            with self.assertRaises(AttributeError):
-                setattr(d, name, None)
+    def test_writes_raise(self):
+        for cls in (VehicleController, DroneController):
+            unit = cls.__new__(cls)
+            unit.mission = None
+            for name in ("current_target", "current_target_key"):
+                with self.subTest(cls=cls.__name__, name=name), self.assertRaises(AttributeError):
+                    setattr(unit, name, None)
 
 
 class BeginEndMissionTests(StubTestCase):

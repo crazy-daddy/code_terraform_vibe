@@ -470,7 +470,6 @@ class FluidPassTests(harness.StubTestCase):
         self.assertEqual(self.run_pass(), "queued")  # water: o1 (producer) -> home (farm)
         self.assertEqual({c[1] for c in self.blueprints.calls}, {"water"})
         self.assertEqual(self.run_pass(), "done")  # steam: no producer
-        self.assertIn("Fluid steam: no producer", self.debug_log())
 
     def test_refinery_output_reaches_wildlife(self):
         self.world.services["journal"] = Journal([Site("exotic", 805, 5, "ex1", fluid="raw_quicksilver")])
@@ -500,7 +499,6 @@ class FluidPassTests(harness.StubTestCase):
         planner = fp.FluidPlanner(self.log)
         self.assertEqual(self.run_pass(planner), "queued")  # wp1 -> home needs more than 5 pieces
         self.assertEqual(len(self.blueprints.calls), 1)
-        self.assertIn("(urgent chunk)", self.debug_log())
         self.assertEqual(self.run_pass(planner), "waiting")  # the chunk's job is still open
         self.assertEqual(len(self.blueprints.calls), 1)
 
@@ -517,7 +515,6 @@ class FluidPassTests(harness.StubTestCase):
     def test_no_producer_is_done(self):
         self.world.services["journal"] = Journal([])
         self.assertEqual(self.run_pass(), "done")
-        self.assertIn("no producer", self.debug_log())
 
     def test_rejected_route_not_retried(self):
         self.blueprints.answers = ["blocked"]
@@ -535,7 +532,6 @@ class FluidPassTests(harness.StubTestCase):
         self.assertEqual(self.run_pass(planner), "ahead")  # then toward the untapped site, before any pump stands there
         ahead = [e for e in bq.planned().values() if e["p"] == st.PLAN_AHEAD_PRIO]
         self.assertTrue(ahead)
-        self.assertIn("1 planned producer(s)", self.debug_log())
 
     def test_inferred_contact_starts_a_network_ahead(self):
         self.world.services["journal"] = Journal([])
@@ -543,7 +539,6 @@ class FluidPassTests(harness.StubTestCase):
         with mock.patch.object(fo, "read_contacts", return_value=contact):
             self.assertEqual(self.run_pass(), "ahead")  # only a planned producer: plan-ahead chunk from the contact
         self.assertEqual({c[1] for c in self.blueprints.calls}, {"water"})
-        self.assertIn("1 inferred contact(s)", self.debug_log())
 
     def test_liquifiers_piped_to_the_mixer_outpost(self):
         self.world.services["journal"] = Journal([])

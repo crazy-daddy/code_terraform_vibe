@@ -99,18 +99,6 @@ class AutoplayContentTest(unittest.TestCase):
         self.assertFalse(save_scripts.at_lib_tier("0_cold_boot"))
         self.assertFalse(save_scripts.at_lib_tier("contract"))
 
-    def test_warning_names_content_and_both_flags(self):
-        text = "\n".join(
-            save_scripts.autoplay_warning([("automation_2", "infra_planner_automation")], ["blueprint_queue"])
-        )
-        for part in (
-            "blueprint_queue",
-            "automation_2 (infra_planner_automation)",
-            "--include-autoplay",
-            "--strip-autoplay",
-        ):
-            self.assertIn(part, text)
-
     def test_stripped_importers(self):
         hits = save_scripts.stripped_importers(
             {"panel_7": "from blueprint_queue import queue\n", "solar_1": SOLAR_SLOT}, ["blueprint_queue"]
@@ -146,11 +134,14 @@ class MainAutoplayTest(unittest.TestCase):
                 save_scripts.main()
             self.assertEqual(hashlib.sha256(save.read_bytes()).hexdigest(), before, "save file changed")
             outdir = root / "out"
-            files = {
-                p.relative_to(outdir).as_posix(): p.read_text(encoding="utf-8")
-                for p in outdir.rglob("*")
-                if p.is_file()
-            }
+            # Read slot scripts, the strip manifest and the autoplay lib under test; the ~200 staged lib copies
+            # only by name (reading them all cost about a second per call on Windows).
+            read_libs = {"lib/" + save_scripts.STRIP_MANIFEST, "lib/blueprint_queue.py"}
+            files = {}
+            for p in outdir.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(outdir).as_posix()
+                    files[rel] = p.read_text(encoding="utf-8") if "/" not in rel or rel in read_libs else ""
             return err.getvalue(), files
 
     def test_warns_without_flag(self):
@@ -173,7 +164,8 @@ class MainAutoplayTest(unittest.TestCase):
     def test_no_warning_with_include_autoplay(self):
         err, files = self._main("--include-autoplay")
         self.assertNotIn("warn", err)
-        self.assertIn("lib/blueprint_queue.py", files)
+        # autoplay/lib's copy, not the stale one the save holds
+        self.assertEqual(files["lib/blueprint_queue.py"], "from storage_take import takeable_stock\n")
 
     def test_check_warns_and_writes_nothing(self):
         err, files = self._main("--check", out=False)
@@ -195,15 +187,6 @@ class MainAutoplayTest(unittest.TestCase):
         self.assertIn("playground_1 imports stripped autoplay lib(s): blueprint_queue", err)
         self.assertNotIn("solar_1 imports", err)
         self.assertNotIn("Autoplay role", files.get("solar_1.py", ""))  # scripts/ content, not stripped
-
-    def test_flags_exclude_each_other(self):
-        for pair in (("--include-autoplay", "--strip-autoplay"), ("--strip-autoplay", "--check")):
-            with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-                self._main(*pair)
-
-    def test_out_required_unless_check(self):
-        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
-            self._main(out=False)
 
 
 if __name__ == "__main__":

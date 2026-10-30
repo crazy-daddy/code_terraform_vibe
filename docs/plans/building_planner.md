@@ -282,7 +282,7 @@ in one dict (autoplay cheatsheet), so they can be tuned in one place.
   rates, aftermath history); only fixed absolute limits may be constants (information policy, founding plan).
 - **C) Script slots** (base-wide): each script a proposal keeps running. Above 50 running scripts every extra
   one shrinks every script's step allowance (dev_workflow §1d-1), so it slows the whole base. N comes from the
-  census (`script_census.count_running()`). A building without a script (Warehouse, tank) or with a script that
+  census (`script_census.snapshot()`: running machine plus panel/automation scripts). A building without a script (Warehouse, tank) or with a script that
   parks or ends when idle (`script_parking`) costs nothing or little; one big machine beats two small ones.
   Retiring a running machine gives the slot back, which counts in favour of retire work.
 

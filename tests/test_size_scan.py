@@ -153,15 +153,17 @@ class IgnorePinTests(unittest.TestCase):
     def test_report_lists_review_sections(self):
         grew = function_hit(30)
         kept, ignored, *review = ss.triage([grew, function_hit(12, subject="old")], ss.parse_entries(IGNORE))
+        grown, unpinned, stale = review
+        self.assertEqual((len(grown), len(unpinned), len(stale)), (1, 1, 2))
         text = ss.report(kept, False, ignored, review)
-        self.assertIn("Ignore entries to revisit: 1 grown, 1 unpinned, 2 stale.", text)
-        self.assertIn("`lib/a.py::fn`: complexity 30/10; grew since review (22/17/56 -> 30/-/-)", text)
-        self.assertIn("## ignore entries unpinned, pin after review (--pin) (1)", text)
-        self.assertIn("## ignore entries stale, remove (2)", text)
-        self.assertIn(
-            "## ignore entries stale at custom limits, recheck at the defaults (2)",
-            ss.report(kept, False, 0, review, True),
-        )
+        for item in [*grown, *unpinned, *stale]:
+            self.assertIn(item.id, text)
+        # At custom limits a stale entry may only be stale there: still listed, but not advised for removal.
+        custom = ss.report(kept, False, 0, review, True)
+        self.assertIn("stale, remove", text)
+        self.assertNotIn("stale, remove", custom)
+        for item in stale:
+            self.assertIn(item.id, custom)
 
 
 if __name__ == "__main__":

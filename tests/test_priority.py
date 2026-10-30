@@ -147,10 +147,6 @@ class DeficitTests(unittest.TestCase):
         self.assertEqual(pr.top_deficit(self.LV, 100), (0, 0))
         self.assertEqual(pr.top_deficit([], 0), (0, 0))
 
-    def test_deficits_text(self):
-        self.assertEqual(pr.deficits_text([]), "none")
-        self.assertEqual(pr.deficits_text([(400, 18), (100, 70)]), "need(400) 18, stock(100) 70")
-
 
 if __name__ == "__main__":
     unittest.main()

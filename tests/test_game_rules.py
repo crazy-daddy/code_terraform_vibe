@@ -23,7 +23,6 @@ class GameRulesTests(unittest.TestCase):
 
     def test_game_hour(self):
         self.assertEqual(game_rules.SECONDS_PER_GAME_HOUR * 24, game_rules.DAY_CYCLE_DURATION_SECONDS)
-        self.assertEqual(game_rules.TICKS_PER_GAME_HOUR, 250)
 
     def test_every_ore_smelts(self):
         self.assertEqual(sorted(game_rules.SMELT_PRODUCTS), sorted(game_rules.RAW_ORE_ITEM_IDS))

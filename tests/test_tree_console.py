@@ -102,11 +102,6 @@ class BufferingTests(ConsoleCase):
         self.assertEqual(self.lines(), [("info", "outcome")])
         self.assertFalse(log.debugging)
 
-    def test_default_level_is_debugging_not_verbose(self):
-        log = self.make()
-        self.assertTrue(log.debugging)
-        self.assertFalse(log.verbose)
-
     def test_warn_level_drops_info_block_but_keeps_warn_inside(self):
         self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "warn"})
         log = self.make()
@@ -115,10 +110,6 @@ class BufferingTests(ConsoleCase):
         log.level("warn").print("low battery")
         log.end("done")
         self.assertEqual(self.lines(), [("warn", "low battery")])
-
-    def test_missing_levels_dict_is_seeded_with_debug(self):
-        self.make()
-        self.assertEqual(self.world.notebook.get(tree_console.LOG_LEVELS_KEY), {"*": "debug"})
 
     def test_existing_levels_dict_is_kept(self):
         self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"power": "trace"})

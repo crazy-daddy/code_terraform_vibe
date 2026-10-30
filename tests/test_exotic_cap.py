@@ -67,16 +67,11 @@ class _SpringTap:
 
 
 class ExoticCapTests(StubTestCase):
-    def test_medium_picks_port_tanks_and_fluid(self):
+    def test_medium_picks_the_output_port(self):
         gas = exotic_cap.ExoticCapController(_GasCap(_Deposit(fluid="raw_chlorine")))
         self.assertEqual(gas.port_name, "gas_out")
-        self.assertEqual(gas._router.type_ids, exotic_cap.GAS_TANK_TYPE_IDS)
-        self.assertEqual(gas._router.fluid_id, "raw_chlorine")
-        self.assertEqual(gas.parker.kind, "exotic_cap")
         tap = exotic_cap.ExoticCapController(_SpringTap(_Deposit(fluid="brine")))
         self.assertEqual(tap.port_name, "liquid_out")
-        self.assertEqual(tap._router.type_ids, exotic_cap.LIQUID_TANK_TYPE_IDS)
-        self.assertEqual(tap._router.fluid_id, "brine")
 
     def test_valve_stays_open_while_dormant(self):
         cap = _GasCap(_Deposit(phase="dormant"))

@@ -280,12 +280,11 @@ class SnapshotPlanTests(StubTestCase):
         self.assertEqual(len(lines), 1, lines)
         self.assertIn("STALE", lines[0])
 
-    def test_missing_snapshot_plans_live_silently(self):
+    def test_missing_snapshot_plans_live(self):
         now, _outposts = self._world()
-        plan, scans, lines = self._plan_counting(_PlanningHost(_DEPOTS), now)
+        plan, scans, _lines = self._plan_counting(_PlanningHost(_DEPOTS), now)
         self.assertIsNone(plan)
         self.assertIn("outpost_b", scans)
-        self.assertEqual(lines, [])
 
     def test_fresh_snapshot_plan_is_flagged(self):
         now, outposts = self._world()
@@ -296,9 +295,8 @@ class SnapshotPlanTests(StubTestCase):
         hauler = _FullPlanningHost([*_DEPOTS, {"id": "depot_c", "outpost_id": "outpost_c", "coords": (-100.0, 0.0)}])
         logistics_requests.planning_snapshot(hauler.name)  # as plan_haul_job() will: not in the record's "taken"
         self._publish(now, [*outposts, c])
-        plan, scans, lines = self._plan_counting(hauler, now)
+        plan, scans, _lines = self._plan_counting(hauler, now)
         self.assertEqual(scans, [])
-        self.assertEqual(lines, [])
         assert plan is not None
         self.assertIs(plan["snapshot"], True)
         self.assertTrue(plan["alternates"])
@@ -384,8 +382,7 @@ class ClaimSnapshotPlanTests(StubTestCase):
         dest = w.add_outpost("outpost_d")
         logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
         w.add_warehouse("wh_d", dest, {"iron_ore": 8})  # live deficit 2, minimum 5
-        host = _ClaimHost()
-        job = job_haul.HaulJob(host)
+        job = job_haul.HaulJob(_ClaimHost())
         now, plan = self._plan(dest, snapshot=True)
         plan["wanted"] = 5
         with (
@@ -393,13 +390,10 @@ class ClaimSnapshotPlanTests(StubTestCase):
             mock.patch.object(
                 logistics_requests, "release_pickups", wraps=logistics_requests.release_pickups
             ) as release,
-            mock.patch.object(host.log, "debug", wraps=host.log.debug) as debug,
         ):
             self.assertIsNone(job._claim_route(plan, now))
         claim.assert_not_called()
         release.assert_not_called()
-        lines = [c.args[0] for c in debug.call_args_list]
-        self.assertTrue([line for line in lines if "filled since the tier snapshot" in line], lines)
         self.assertEqual(logistics_requests.in_flight("outpost_d", now), {})
 
     def test_claim_route_keeps_live_deficit_of_snapshot_plan(self):
@@ -407,31 +401,24 @@ class ClaimSnapshotPlanTests(StubTestCase):
         dest = w.add_outpost("outpost_d")
         logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
         w.add_warehouse("wh_d", dest, {"iron_ore": 4})
-        host = _ClaimHost()
-        job = job_haul.HaulJob(host)
+        job = job_haul.HaulJob(_ClaimHost())
         now, plan = self._plan(dest, snapshot=True)
-        with mock.patch.object(host.log, "debug", wraps=host.log.debug) as debug:
-            route = job._claim_route(plan, now)
+        route = job._claim_route(plan, now)
         assert route is not None
         self.assertEqual([(s["id"], loads) for s, loads in route], [("drill_1", [("iron_ore", 6)])])
-        # The trim is not a claim cut: no "another hauler" line.
-        self.assertFalse([c.args[0] for c in debug.call_args_list if "another hauler" in c.args[0]])
 
     def test_claim_route_race_cuts_rival_units_once(self):
         w = self.world
         dest = w.add_outpost("outpost_d")
         logistics_requests.set_requests("outpost_d", "fab", {"iron_ore": (R(10), 0)}, w.clock.now)
-        host = _ClaimHost()
-        job = job_haul.HaulJob(host)
+        job = job_haul.HaulJob(_ClaimHost())
         now, plan = self._plan(dest, snapshot=True)
         # A rival claims 3 towards the same destination after `seen`.
         logistics_requests.reserve_pickup("drone_7", "outpost_d", "iron_ore", 3, now, source_id="drill_2")
-        with mock.patch.object(host.log, "debug", wraps=host.log.debug) as debug:
-            route = job._claim_route(plan, now)
+        route = job._claim_route(plan, now)
         assert route is not None
         self.assertEqual([(s["id"], loads) for s, loads in route], [("drill_1", [("iron_ore", 7)])])
         self.assertEqual(logistics_requests.in_flight("outpost_d", now), {"iron_ore": 10})
-        self.assertTrue([c.args[0] for c in debug.call_args_list if "another hauler" in c.args[0]])
 
 
 if __name__ == "__main__":

@@ -85,30 +85,18 @@ class WeightTests(unittest.TestCase):
 
 
 class MarkerLabelTests(unittest.TestCase):
-    def test_research_locked_marker_names_the_candidates(self):
-        icon, _color, label, note = um.get_marker_style("research_required", locked(GEO))
-        self.assertEqual(icon, "fluid")
-        self.assertIn("water/oil/exotic?", label)
-        self.assertIn("water, oil, exotic", note)
-
-    def test_inferred_thermal_gets_the_power_icon(self):
-        icon, _color, label, _note = um.get_marker_style("research_required", locked(HYDRO, PETRO, EXO, DEEP_EXO))
-        self.assertEqual(icon, "power")
-        self.assertEqual(label, "Thermal vent: needs Geological Survey")
-
-    def test_geothermal_marker_names_thermal_and_thermal_cap(self):
-        icon, _color, label, note = um.get_marker_style(
-            "research_required", {"reason": "research_required"}, "geothermal"
-        )
-        self.assertEqual(icon, "power")
-        self.assertEqual(label, "Thermal vent: needs Geological Survey")
-        self.assertIn("Thermal Cap", note)
+    def test_marker_icon_follows_the_inferred_contact(self):
+        self.assertEqual(um.get_marker_style("research_required", locked(GEO))[0], "fluid")
+        thermal = locked(HYDRO, PETRO, EXO, DEEP_EXO)
+        self.assertEqual(um.get_marker_style("research_required", thermal)[0], "power")
+        geothermal = um.get_marker_style("research_required", {"reason": "research_required"}, "geothermal")
+        self.assertEqual(geothermal[0], "power")
 
     def test_too_hard_marker_states_the_hardness_floor(self):
         _icon, _color, label, _note = um.get_marker_style(
             "too_hard", {"reason": "too_hard", "hardness_limit": 1, "scanner_tier": "basic"}
         )
-        self.assertTrue(label.startswith("Mineral, hardness 2+"))
+        self.assertIn("2+", label)
 
 
 class SameBlockTests(unittest.TestCase):

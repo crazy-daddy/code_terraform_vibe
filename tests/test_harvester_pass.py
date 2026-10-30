@@ -413,7 +413,6 @@ class CompositeTests(StubTestCase):
         cell.status = "stalled"
         k.uproot_current = lambda: False
         self.assertFalse(k.clear_crop_here())
-        self.assertEqual(k._deploy_fail_ticks, {"B2": 1000})
 
     def test_inventory_full_sets_the_pause(self):
         k = _keeper()

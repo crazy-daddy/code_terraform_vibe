@@ -172,15 +172,6 @@ def snapshot():
     return rows, set(running) - ui, ui
 
 
-def count_running():
-    """(running scripts incl. panels/automations, machine ids checked), or None without run_control."""
-    taken = snapshot()
-    if taken is None:
-        return None
-    rows, running, ui = taken
-    return len(running) + len(ui), len(rows)
-
-
 def census_if_due(now):
     """Every CENSUS_TICK_INTERVAL ticks: count running scripts and log the census line.
     Returns the snapshot() it counted (lib/machine_activity.py samples it), else None."""
